@@ -1,0 +1,16 @@
+{
+  "expires": "2027-05-21",
+  "tracking_issue": "https://github.com/RustXNG/RustXNG/issues/158",
+  "reason": "One unmaintained-transitive exception is tracked: chrono is a non-optional dependency of the MCP SDK (rmcp 3.x, all released versions) and of schemars, so it cannot be removed from this crate's tree. The advisory marks the crate unmaintained; it records no vulnerability, unsoundness or memory-safety finding. The direct use in this crate stays limited to timestamp formatting and parsing. Tracked so the gate keeps failing on anything new.",
+  "findings": [
+    {
+      "id": "RUSTSEC-2026-0543",
+      "kind": "unmaintained",
+      "package": "chrono",
+      "version": "0.4.45",
+      "reviewed_at": "2026-11-21",
+      "why_it_stays": "rmcp 3.9.0 and 3.11.0 both declare chrono as a non-optional dependency; schemars 1.x does the same. Dropping our direct dependency does not remove it from the tree.",
+      "exit_condition": "rmcp publishes a release without chrono, or the advisory is withdrawn."
+    }
+  ]
+}

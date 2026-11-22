@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Build a shard queue in twenty minutes</title></head>
+<body>
+<nav aria-label="Learn"><a href="/learn">Learn</a><a href="/learn/queues">Queues</a></nav>
+<main>
+<article>
+<h1>Build a shard queue in twenty minutes</h1>
+<p>This tutorial builds a queue that hands out shards with an expiring lease. Each step can be run on its own, and the whole thing fits in about eighty lines.</p>
+<h2>Step 1: the data</h2>
+<p>Start with a table of shards and a claim time.</p>
+<pre><code>CREATE TABLE shard (id INTEGER PRIMARY KEY, lease_until INTEGER);
+</code></pre>
+<h2>Step 2: claim</h2>
+<p>Claiming is one conditional update, so two workers cannot hold the same shard.</p>
+<pre><code>UPDATE shard SET lease_until = $1 WHERE id = $2 AND lease_until &lt; $3;
+</code></pre>
+<aside><p>Tip: the conditional update returns the number of rows it changed, which is how you know the claim succeeded.</p></aside>
+<h2>Step 3: renew</h2>
+<p>Renewal is the same update with a new expiry and a check that the lease is still held by the same worker.</p>
+<aside><p>Warning: renewal must never extend a lease that already expired, or two workers will hold it at once.</p></aside>
+<h2>Next steps</h2>
+<ol>
+<li>Add a retry with a short backoff for failed claims.</li>
+<li>Record the hold time of every shard and plot it.</li>
+</ol>
+<nav aria-label="Lesson"><a href="/learn/queues/next">Next lesson: expiry without a coordinator</a></nav>
+</article>
+</main>
+<footer role="contentinfo">© 2026 Example Learn · Edit this lesson</footer>
+</body>
+</html>

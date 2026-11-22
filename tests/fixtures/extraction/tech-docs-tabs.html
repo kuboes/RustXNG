@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Configuring workers — Example Docs</title>
+<script>window.analytics = {id: 7};</script>
+</head>
+<body>
+<header role="banner"><a href="/">Example Docs</a><div role="search"><form><input placeholder="Search docs"></form></div></header>
+<nav role="navigation"><a href="/start">Getting started</a><a href="/config">Configuration</a></nav>
+<main>
+<article>
+<h1>Configuring workers</h1>
+<p>The crawler runs two worker pools, <code>fetch</code> and <code>index</code>. Each pool reads its size from the configuration file at start-up.</p>
+<h2>Sharding</h2>
+<p>Workers claim shards from a queue rather than from a single counter, because one counter becomes a hot spot once a pool grows past a few dozen threads.</p>
+<div role="tablist"><button role="tab">config.yaml</button><button role="tab">Environment</button></div>
+<pre><code>workers:
+  fetch: 16
+  index: 4
+  lease_seconds: 30
+</code></pre>
+<p>The <code>lease_seconds</code> value bounds how long a shard stays claimed when a worker dies mid-run.</p>
+<blockquote><p>A lease that is too short re-fetches shards, and one that is too long stalls the queue.</p></blockquote>
+<h2>Verifying the change</h2>
+<ol>
+<li>Restart the crawler with the new file.</li>
+<li>Watch the queue depth for one minute.</li>
+<li>Confirm that the lease column of the shard table keeps moving.</li>
+</ol>
+<p>If the queue depth does not fall, the fetch pool is bound by the network rather than by the workers.</p>
+</article>
+</main>
+<footer role="contentinfo">© 2026 Example Docs · Edit this page</footer>
+</body>
+</html>

@@ -1,0 +1,24 @@
+/target
+**/*.rs.bk
+*.log
+.env
+searxng.toml
+__pycache__/
+
+# Local BM25 index built by rustxng-index crawl (never commit it)
+index-data/
+index-clean/
+index-wikipedia/
+index-docs/
+index-docs-*/
+# Written by the nightly benchmark workflow
+bench/nightly.json
+
+# Content dumps from commercial APIs (large, regenerable with tools/collect_commercial.py)
+bench/content-exa.json
+bench/content-tavily.json
+bench/content-ollama.json
+
+# Full benchmark observations are kept as compressed evidence.
+/bench/results/**/observations.jsonl
+/dist

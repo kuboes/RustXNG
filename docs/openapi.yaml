@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: RustXNG HTTP API
+  version: 0.31.2
+  description: |
+    RustXNG の HTTP API のうち、機械可読な JSON を返す経路だけを記述する。
+    成功時の `/search?format=json` は SearXNG 互換。エラー本文は要求フォーマットに従う
+    （json は `{"error": "..."}`、csv/rss/画像プロキシは text/plain、html はテンプレート）。
+    この仕様は実装の説明であり、提供元プロバイダーの利用条件を保証しない。
+  license:
+    name: AGPL-3.0-or-later
+servers:
+  - url: http://127.0.0.1:29483
+    description: 既定の loopback バインド
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: 人が読む理由。機械判定には HTTP ステータスを使う。
+    SearchResult:
+      type: object
+      required: [url, title]
+      properties:
+        url: { type: string }
+        title: { type: string }
+        content: { type: string }
+        engine: { type: string }
+        engines: { type: array, items: { type: string } }
+        score: { type: number }
+        category: { type: string }
+        raw_content:
+          type: string
+          description: include_raw_content=1 のときだけ返る本文。
+        raw_content_status:
+          type: string
+          enum: [ok, not_requested, too_large, fetch_failed, robots_blocked, extract_failed, render_failed, unknown]
+        raw_content_error: { type: string }
+        raw_content_truncated: { type: boolean }
+    SearchResponse:
+      type: object
+      properties:
+        query: { type: string }
+        number_of_results: { type: integer }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/SearchResult' }
+        suggestions: { type: array, items: { type: string } }
+        unresponsive_engines:
+          type: array
+          items: { type: array, items: { type: string } }
+        suspended_engines:
+          type: array
+          description: 休止中エンジンの理由と残り秒数（この実装の拡張）。空なら省略される。
+          items: { $ref: '#/components/schemas/SuspendedEngine' }
+    SuspendedEngine:
+      type: object
+      required: [engine, reason, seconds_remaining]
+      properties:
+        engine: { type: string }
+        reason: { type: string }
+        seconds_remaining: { type: integer, minimum: 0, description: 切り上げた残り秒数 }
+    Readiness:
+      type: object
+      required: [ready, engines, local_index, reasons]
+      properties:
+        ready: { type: boolean }
+        engines: { type: integer, minimum: 0 }
+        local_index: { type: boolean }
+        reasons:
+          type: array
+          items: { type: string }
+  parameters:
+    Q:
+      name: q
+      in: query
+      required: false
+      schema: { type: string, maxLength: 2048 }
+      description: 検索語。空なら 400。2048 文字を超えると 400。
+paths:
+  /search:
+    get:
+      summary: Search
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - { name: format, in: query, schema: { type: string, enum: [html, json, csv, rss] }, description: "既定 html。instance の search.formats に無ければ 400。" }
+        - { name: categories, in: query, schema: { type: string }, description: カンマ区切り }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: engines, in: query, schema: { type: string }, description: カンマ区切りの検索元名 }
+        - { name: engine, in: query, schema: { type: string } }
+        - { name: language, in: query, schema: { type: string } }
+        - { name: locale, in: query, schema: { type: string } }
+        - { name: pageno, in: query, schema: { type: integer, minimum: 1, maximum: 1000 }, description: "1..=1000。超過は 400（engine の offset 演算を守るため）。" }
+        - { name: safesearch, in: query, schema: { type: integer, minimum: 0, maximum: 2 } }
+        - { name: time_range, in: query, schema: { type: string } }
+        - { name: timeout_limit, in: query, schema: { type: number, exclusiveMinimum: 0 }, description: 有限値のみ。上限は aggregator::MAX_TIMEOUT_LIMIT。 }
+        - { name: strict_engines, in: query, schema: { type: string, enum: ['0', '1', 'true', 'false', 'on', 'off', 'yes', 'no'] }, description: "未知の engine 名を 400 にする（既定は SearXNG 互換のフォールバック）。" }
+        - { name: max_results, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: include_domains, in: query, schema: { type: string } }
+        - { name: exclude_domains, in: query, schema: { type: string } }
+        - { name: include_raw_content, in: query, schema: { type: string, enum: ['0', '1', 'true', 'false', 'on', 'off', 'yes', 'no'] } }
+        - { name: accept_language, in: query, schema: { type: string }, description: 本文取得の言語優先順位（例 ko-KR,ko;q=0.9）。 }
+        - { name: full, in: query, schema: { type: string }, description: "1 で timings などを含む詳細 JSON。" }
+        - { name: strategy, in: query, schema: { type: string, enum: [parallel, staged] } }
+      responses:
+        '200':
+          description: 検索結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchResponse' }
+        '400':
+          description: 入力不正（format 不正、q 空、q 過長、pageno 超過、timeout_limit 不正、engine エラー）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: limiter（server.limiter 有効時）。Retry-After 付き。
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Search（フォーム送信）
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200': { description: get と同じ }
+        '400': { description: get と同じ }
+  /autocompleter:
+    get:
+      summary: 検索候補
+      description: 既知のバックエンド（duckduckgo / wikipedia / mwmbl）だけを対象にし、全体 5 秒で打ち切る。limiter の対象。
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - { name: backend, in: query, schema: { type: string }, description: カンマ区切り。未知の名前は無視される。 }
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: 候補の配列
+          content:
+            application/json:
+              schema: { type: array, items: { type: string } }
+        '429':
+          description: limiter
+  /map:
+    get:
+      summary: サイトの URL 一覧（上流にない拡張）
+      description: |
+        robots.txt の Sitemap 宣言 → sitemap index → シードページのリンクの順に発見する。
+        URL は正規化し、シードの origin に限定して重複を除く。取得は本文取得と同じ検証済みリーダー
+        （非公開アドレス拒否・robots.txt 遵守）を使い、limiter の対象。
+      parameters:
+        - { name: url, in: query, required: true, schema: { type: string }, description: 起点 URL（絶対 http(s)） }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 5000 }, description: 返す URL の上限（既定 5000） }
+      responses:
+        '200':
+          description: 発見した URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MapReport' }
+        '400':
+          description: url 欠落・不正
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { description: limiter }
+        '502': { description: 取得失敗（robots.txt / sitemap / シードページ） }
+  /extract:
+    get:
+      summary: ページからの構造化抽出（上流にない拡張）
+      description: |
+        JSON-LD → 定義リスト → 表の順に試し、最初に得られた方式だけを返す（同じデータを重複して返さない）。
+        各レコードは由来（source と path）を持つ。値はページにあるものだけで、推測はしない。
+      parameters:
+        - { name: url, in: query, required: true, schema: { type: string }, description: 対象 URL（絶対 http(s)） }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 }, description: 返すレコードの上限（既定 200） }
+      responses:
+        '200':
+          description: 抽出したレコード
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtractReport' }
+        '400':
+          description: url 欠落・不正
+        '429': { description: limiter }
+        '502': { description: 取得失敗 }
+  /research:
+    get:
+      summary: 深掘り調査（上流にない拡張）
+      description: |
+        サブクエリ計画 → 検索 → 本文取得 →（LLM 設定時）引用付きレポート。
+        全体期限 research.deadline（既定 120 秒）、同時実行 research.max_concurrency（既定 2）。
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - { name: max_queries, in: query, schema: { type: integer, minimum: 1, maximum: 10 } }
+        - { name: max_sources, in: query, schema: { type: integer, minimum: 1, maximum: 50 } }
+      responses:
+        '200': { description: 証拠バンドルと任意のレポート }
+        '400':
+          description: q が空
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: limiter または同時実行超過
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: research.deadline 超過
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /healthz:
+    get:
+      summary: プロセスの生存確認
+      responses:
+        '200':
+          description: 常に "OK"（上流の可用性は示さない）
+          content:
+            text/plain:
+              schema: { type: string }
+  /readyz:
+    get:
+      summary: 検索可能性の確認
+      description: 構成された検索元（engines 数）またはローカル索引の有無を返す。どちらも無ければ 503。外部への問い合わせはしない。
+      responses:
+        '200':
+          description: 検索できる構成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '503':
+          description: 検索元が無い
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+  /config:
+    get:
+      summary: 公開設定と有効なエンジン一覧
+      responses:
+        '200':
+          description: JSON
+  /stats:
+    get:
+      summary: 実行統計（HTML）
+      responses:
+        '200': { description: 統計ページ }

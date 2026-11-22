@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><title>索引の作り方</title></head>
+<body>
+<nav><a href="/">ホーム</a><a href="/docs">ドキュメント</a></nav>
+<article>
+  <h1>索引の作り方</h1>
+  <p>まず<code>rustxng-index crawl</code>を実行します。</p>
+  <dl>
+    <dt>--workers</dt><dd>同時に取得するページ数です。</dd>
+    <dt>--max-pages</dt><dd>取得するページ数の上限です。</dd>
+  </dl>
+  <table><tr><th>項目</th><th>既定値</th></tr><tr><td>workers</td><td>8</td></tr></table>
+  <pre><code>rustxng-index crawl --seed https://docs.python.org/3/ \
+  --output index-docs</code></pre>
+</article>
+<footer>© 2026 Example</footer>
+</body>
+</html>

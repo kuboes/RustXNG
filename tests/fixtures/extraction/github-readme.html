@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>example/toolkit: small helpers for text pipelines</title></head>
+<body>
+<nav aria-label="Repository"><a href="#readme">Code</a><a href="#issues">Issues</a><a href="#pulls">Pull requests</a></nav>
+<main>
+<article>
+<div><img src="badge-build.svg" alt="build passing"><img src="badge-license.svg" alt="MIT"></div>
+<h1>example/toolkit</h1>
+<p>Small helpers for text pipelines. No runtime dependencies, one binary per tool.</p>
+<nav aria-label="Contents"><a href="#install">Install</a><a href="#usage">Usage</a><a href="#license">License</a></nav>
+<h2>Install</h2>
+<pre><code>cargo install --path crates/toolkit
+toolkit --version
+</code></pre>
+<h2>Usage</h2>
+<p>Read a directory of pages and print the readable text of each one.</p>
+<pre><code>toolkit extract --input pages/ --format jsonl &gt; out.jsonl
+</code></pre>
+<blockquote><p>Note: the extractor keeps table rows as Markdown pipes so downstream tools can split at the pipes.</p></blockquote>
+<h2>Options</h2>
+<ul>
+<li><code>--input</code> directory to read</li>
+<li><code>--format</code> one of jsonl, text</li>
+<li><code>--limit</code> maximum characters per page</li>
+</ul>
+<h2>License</h2>
+<p>MIT. See LICENSE for the full text.</p>
+</article>
+</main>
+<footer role="contentinfo">© 2026 Contributors · Terms · Privacy</footer>
+</body>
+</html>

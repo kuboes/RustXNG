@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><title>설치 안내 — 예제 도구</title></head>
+<body>
+<header role="banner"><a href="/">예제 도구</a></header>
+<nav role="navigation"><a href="/guide">시작하기</a><a href="/config">설정</a></nav>
+<main>
+<article>
+<h1>설치 안내</h1>
+<p>이 문서는 예제 도구를 리눅스에 설치하는 순서를 설명합니다. 모든 명령은 일반 사용자 권한으로 실행합니다.</p>
+<h2>준비</h2>
+<ul>
+<li>러스트 컴파일러 1.80 이상</li>
+<li>디스크 여유 공간 2기가바이트</li>
+</ul>
+<h2>빌드</h2>
+<pre><code>cargo build --release
+target/release/toolkit --version
+</code></pre>
+<p>빌드가 끝나면 실행 파일 하나만 남습니다. 별도의 런타임은 필요하지 않습니다.</p>
+<h2>문제 해결</h2>
+<table>
+<caption>표 1: 자주 나오는 오류</caption>
+<tr><th>오류</th><th>원인</th><th>해결</th></tr>
+<tr><td>링커 없음</td><td>빌드 도구 미설치</td><td>gcc와 make를 설치한다</td></tr>
+<tr><td>권한 거부</td><td>캐시 디렉터리 소유자 불일치</td><td>캐시를 지우고 다시 빌드한다</td></tr>
+</table>
+<p>표에 없는 오류는 실행 로그의 마지막 열 줄을 먼저 확인하십시오.</p>
+</article>
+</main>
+<footer role="contentinfo">© 2026 예제 도구 · 개인정보 처리방침</footer>
+</body>
+</html>

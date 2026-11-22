@@ -1,0 +1,273 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Install PDF extraction tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y poppler-utils poppler-data
+      - name: Install PDF extraction tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install poppler
+      - name: Install PDF extraction tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install poppler --version=26.9.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pdf = Get-ChildItem "$env:ChocolateyInstall\lib\poppler\tools" -Filter pdftotext.exe -Recurse | Select-Object -First 1
+          if (-not $pdf) { throw 'pdftotext.exe was not installed' }
+          $pdf.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build and test
+        run: cargo test --locked --all-targets
+      - name: Install Python test dependencies
+        if: runner.os != 'Linux'
+        # The macOS and Windows images do not preinstall PyYAML the way the
+        # Linux image does, and test_openapi.py imports it.
+        run: python -m pip install --quiet --user pyyaml
+      - name: Offline evaluation tests
+        run: |
+          python -m unittest discover -s tools -p "test_*.py"
+          python tools/provider_inventory.py --check
+          python tools/check_provider_policy.py
+      - name: Build the server binary
+        run: cargo build --locked --bin rustxng
+      - name: The configuration validates without serving
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          target/debug/rustxng --check-config --profile standard > "$RUNNER_TEMP/check.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["ready"] and r["engines"] > 0, r; c=r["circuit"]; assert c["enabled"] and c["window"] > 0 and 0 < c["failure_ratio"] <= 1 and 0 < c["minimum_samples"] <= c["window"] and 0 < c["open_seconds"] <= c["max_open_seconds"], c' "$RUNNER_TEMP/check.json"
+          # The full profile must also be usable, and clean must be honest about
+          # having no source when no index directory is present.
+          target/debug/rustxng --check-config --profile full > "$RUNNER_TEMP/full.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["ready"] and r["engines"] > 0, r; c=r["circuit"]; assert c["enabled"] and c["window"] > 0 and 0 < c["failure_ratio"] <= 1 and 0 < c["minimum_samples"] <= c["window"] and 0 < c["open_seconds"] <= c["max_open_seconds"], c' "$RUNNER_TEMP/full.json"
+          target/debug/rustxng --check-config --profile clean > "$RUNNER_TEMP/clean.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert not r["ready"] and r["engines"] == 0, r' "$RUNNER_TEMP/clean.json"
+      - name: Agent setup smoke test (offline)
+        # The script resolves the .exe suffix on Windows.
+        run: python tools/smoke_agent_setup.py --binary target/debug/rustxng
+      - name: Build the example
+        run: cargo build --locked --example benchmark
+      - name: Lint the Japanese docs
+        if: runner.os == 'Linux'
+        run: npx --yes markdownlint-cli2@0.24.0 "*.md" "docs/*.md" "tools/page-renderer/*.md"
+
+  javascript-pages:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/page-renderer/package-lock.json
+      - run: npm ci
+        working-directory: tools/page-renderer
+      - run: npx playwright install --with-deps firefox
+        working-directory: tools/page-renderer
+      - run: npm test
+        working-directory: tools/page-renderer
+      - run: cargo test --locked --test rendered_pages -- --include-ignored
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mariadb:
+        image: mariadb:11.8@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd
+        env:
+          MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+          MARIADB_DATABASE: rustxng_test
+          MARIADB_USER: rustxng
+          MARIADB_PASSWORD: fixture-password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: mysql-integration
+      - run: cargo test --locked --test mysql -- --ignored
+        env:
+          MYSQL_TEST_PORT: ${{ job.services.mariadb.ports['3306'] }}
+
+  no-default-features:
+    # The documented slim build (no database engines) must keep compiling.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: no-default-features
+      - run: cargo build --release --locked --no-default-features
+
+  linux-arm64:
+    # Native Linux ARM64 (aarch64-unknown-linux-gnu) on the GitHub-hosted arm64
+    # runner: no cross toolchain and no emulation. Mirrors the release build,
+    # which publishes this target and also validates a native ARM64 container.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: linux-arm64
+      - name: Runner is native aarch64
+        run: test "$(uname -m)" = aarch64
+      - name: Install PDF extraction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y poppler-utils poppler-data
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build and test
+        run: cargo test --locked --all-targets
+      - name: Build the server binary
+        run: cargo build --locked --bin rustxng
+      - name: The binary is aarch64 and answers
+        run: |
+          set -euo pipefail
+          file target/debug/rustxng | tee /dev/stderr | grep -qF aarch64
+          target/debug/rustxng --version
+      - name: Agent setup smoke test (offline)
+        run: python3 tools/smoke_agent_setup.py --binary target/debug/rustxng
+      - name: Check the slim build (no database engines)
+        run: cargo build --locked --no-default-features
+
+  msrv:
+    # Cargo.toml's rust-version must hold for the locked dependency set.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.89.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: msrv
+      - run: cargo check --locked --all-targets
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the image
+        run: docker build --tag rustxng:ci .
+      - name: The image serves /healthz and reports /readyz
+        run: |
+          set -euo pipefail
+          docker run --detach --name rustxng-ci --publish 127.0.0.1:29483:29483 rustxng:ci
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:29483/healthz; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            docker logs rustxng-ci
+            exit 1
+          fi
+          echo "healthz ok"
+          curl --fail --silent http://127.0.0.1:29483/readyz > "$RUNNER_TEMP/readyz.json"
+          cat "$RUNNER_TEMP/readyz.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["ready"] and r["engines"] > 0, r' "$RUNNER_TEMP/readyz.json"
+      - name: The image answers --check-config
+        run: |
+          set -euo pipefail
+          docker run --rm rustxng:ci --check-config --profile clean > "$RUNNER_TEMP/clean.json"
+          cat "$RUNNER_TEMP/clean.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["engines"] == 0 and not r["ready"], r' "$RUNNER_TEMP/clean.json"
+      - name: Stop the container
+        if: always()
+        run: docker rm --force rustxng-ci || true
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned workflow validator
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Validate workflow syntax, expressions and shell
+        run: '"$(go env GOPATH)/bin/actionlint" -color'
+      - name: Offline release and audit policy tests
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+
+  security:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/security.yml
+
+  docker-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          push: false
+          platforms: linux/arm64
+          tags: rustxng:ci-arm64
+          cache-from: type=gha,scope=ci-arm64
+          cache-to: type=gha,mode=max,scope=ci-arm64
+      - name: Native container version and startup
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          bash tools/smoke_container.sh rustxng:ci-arm64 "$version"

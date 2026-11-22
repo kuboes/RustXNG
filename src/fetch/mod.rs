@@ -1,0 +1,129 @@
+//! Page fetching shared by MCP `read_page` and HTTP raw content.
+//!
+//! [`direct`] owns the direct fetcher and the generic destination checks.
+//! [`deepseek`] is an optional external backend selected by `[fetch]`, so
+//! provider-specific code stays out of the MCP and search layers.
+
+pub mod deepseek;
+mod direct;
+mod language;
+mod pdf;
+mod render;
+
+#[cfg(test)]
+pub(crate) use direct::test_public_client;
+pub use direct::{
+    MAX_BODY_BYTES, PageContent, PageReader, classify_fetch_error, is_fetchable, is_global,
+    public_blocking_client,
+};
+pub(crate) use direct::{public_client, public_resolver, validated_resolver};
+pub use language::AcceptLanguage;
+
+use std::sync::Arc;
+
+use futures::future::BoxFuture;
+
+use crate::settings::{FetchProvider, FetchSettings, Outgoing};
+
+/// A page returned by an external fetching backend.
+#[derive(Clone, Debug, Default)]
+pub struct FetchedPage {
+    pub text: Arc<str>,
+    pub source_truncated: bool,
+    /// Optional status behind a degraded answer, e.g. a static fallback after
+    /// a failed page rendering. `None` means the page read went plainly right.
+    pub status: Option<String>,
+    /// Optional short reader message behind [`FetchedPage::status`].
+    pub error: Option<String>,
+}
+
+/// An object-safe page source. The direct fetcher lives in [`direct`]; this
+/// trait is for opt-in providers such as the DeepSeek Fetch API.
+pub trait PageSource: Send + Sync {
+    fn fetch<'a>(
+        &'a self,
+        url: &'a reqwest::Url,
+        max_chars: usize,
+    ) -> BoxFuture<'a, Result<FetchedPage, String>>;
+}
+
+/// Build the external backend requested by `[fetch]`. `None` keeps the direct
+/// fetcher.
+pub fn from_settings(
+    settings: &FetchSettings,
+    outgoing: &Outgoing,
+) -> Result<Option<Arc<dyn PageSource>>, String> {
+    match settings.provider {
+        FetchProvider::Direct => Ok(None),
+        FetchProvider::DeepSeek => {
+            let source = deepseek::DeepSeekSource::from_settings(
+                &settings.deepseek,
+                settings.timeout,
+                outgoing,
+            )?;
+            Ok(Some(Arc::new(source) as Arc<dyn PageSource>))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_is_the_default_backend() {
+        let settings = FetchSettings::default();
+        assert!(
+            from_settings(&settings, &Outgoing::default())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn fetch_errors_are_classified_for_raw_content_status() {
+        assert_eq!(
+            classify_fetch_error("page exceeds the 4 MiB decoded body limit"),
+            "too_large"
+        );
+        assert_eq!(
+            classify_fetch_error(
+                "the site's robots.txt asks automated tools not to read this page"
+            ),
+            "robots_blocked"
+        );
+        assert_eq!(
+            classify_fetch_error("page rendering exceeded 15 seconds"),
+            "render_failed"
+        );
+        assert_eq!(
+            classify_fetch_error("the page has no readable text"),
+            "extract_failed"
+        );
+        assert_eq!(
+            classify_fetch_error("the page answered 403 Forbidden"),
+            "fetch_failed"
+        );
+        assert_eq!(
+            classify_fetch_error("the page took too long to load"),
+            "fetch_failed"
+        );
+        assert_eq!(
+            classify_fetch_error("only public http(s) pages can be read"),
+            "fetch_failed"
+        );
+        assert_eq!(classify_fetch_error("something else entirely"), "unknown");
+    }
+
+    #[test]
+    fn deepseek_without_a_key_is_an_error() {
+        if std::env::var("DEEPSEEK_API_KEY").is_ok() {
+            return;
+        }
+        let settings = FetchSettings {
+            provider: FetchProvider::DeepSeek,
+            ..FetchSettings::default()
+        };
+        assert!(from_settings(&settings, &Outgoing::default()).is_err());
+    }
+}

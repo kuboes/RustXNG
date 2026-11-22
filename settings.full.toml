@@ -1,0 +1,59 @@
+# RustXNG "full" profile: the default configuration plus the HTML search
+# engines that the default leaves off because of their terms.
+#
+#   rustxng --profile full          (built into the binary)
+#   rustxng --config settings.full.toml
+#
+# The engines below answered automated queries when tested (2026-11-04), but
+# their operators' terms prohibit, restrict, or do not establish permission for
+# the configured automated access (see docs/PROVIDERS.md). Private or personal
+# use does not override those terms. Do not enable a prohibited integration
+# without the applicable provider authorization. Not for public deployments.
+#
+# Engines that answer with a CAPTCHA, "access denied" or 429 (DuckDuckGo,
+# Brave, Mojeek, Qwant, Yandex, ...) stay off here too: they return nothing,
+# and RustXNG does not try to get around such blocks.
+
+[general]
+instance_name = "RustXNG (full)"
+
+# Yahoo (US): terms 2.4(9) prohibit automated access.
+[[engines]]
+name = "yahoo"
+disabled = false
+
+# Yahoo! JAPAN: help page prohibits scraping except for indexing crawls.
+[[engines]]
+name = "yahoo japan"
+disabled = false
+
+# NAVER: consistency with the published terms is unconfirmed.
+[[engines]]
+name = "naver"
+disabled = false
+
+# Keenable: calls the public endpoint without an API key.
+[[engines]]
+name = "keenable"
+disabled = false
+
+# A small HTML engine whose terms were not reviewed.
+[[engines]]
+name = "fynd"
+disabled = false
+
+# Tested and left off: "bing Japan" repeats Bing's results; "reloado" was
+# rate-limited within minutes; "ayo" and "quark" often ran into the timeout.
+
+# Exa Search API: the strongest single source here. Paid and key-gated:
+# without a key the entry is skipped at startup with a warning. Add
+# api_key in your own overlay to use it (docs/audit/2026-11-05/).
+[[engines]]
+name = "exaapi"
+engine = "exaapi"
+disabled = false
+search_type = "lite"
+results_per_page = 10
+content_mode = "highlights"
+content_max_characters = 500
+weight = 2.0

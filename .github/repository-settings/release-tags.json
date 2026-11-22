@@ -1,0 +1,28 @@
+{
+  "name": "Version tags: immutable after creation",
+  "target": "tag",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 262773687,
+      "actor_type": "User",
+      "bypass_mode": "always"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    },
+    {
+      "type": "deletion"
+    }
+  ]
+}

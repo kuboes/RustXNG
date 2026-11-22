@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Shard queue — Example Encyclopedia</title></head>
+<body>
+<header role="banner">Example Encyclopedia</header>
+<nav aria-label="Article"><a href="#history">History</a><a href="#design">Design</a><a href="#references">References</a></nav>
+<main>
+<h1>Shard queue</h1>
+<div class="hatnote">For the storage term, see Shard (database).</div>
+<article>
+<table class="infobox">
+<caption>Shard queue</caption>
+<tr><th>Type</th><td>Distributed work queue</td></tr>
+<tr><th>First described</th><td>2019</td></tr>
+<tr><th>Claim model</th><td>Time-bounded lease</td></tr>
+</table>
+<p>A shard queue distributes units of work to workers that claim them one at a time. Unlike a static partition, the queue allows a fast worker to take more work than a slow one.</p>
+<h2 id="history">History</h2>
+<p>The design appeared in web crawlers, where a single slow host could otherwise hold up the whole run. Later systems adopted the same claim protocol for batch processing.</p>
+<h2 id="design">Design</h2>
+<p>A claim is written with an expiry. A worker that stops renewing loses the shard, and the shard returns to the queue for another worker to claim.</p>
+<h2 id="references">References</h2>
+<ol>
+<li>Example Systems Group. Claim protocols for crawlers. 2021.</li>
+<li>Another Author. Lease expiry without a coordinator. 2023.</li>
+</ol>
+</article>
+</main>
+<footer role="contentinfo">Privacy policy · About · Disclaimers</footer>
+</body>
+</html>

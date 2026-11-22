@@ -1,0 +1,102 @@
+# Security
+
+## Private reporting
+
+Please report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/RustXNG/RustXNG/security/advisories/new),
+not a public Issue or Discussion. This feature is enabled for the repository.
+Include the affected version, configuration, minimal reproduction and expected impact, without real credentials or private data.
+The owner coordinates investigation and disclosure; no response-time guarantee is currently offered.
+
+## Current limitations
+
+RustXNG retrieves untrusted upstream information. Local hosting and a successful health check do not establish safety.
+The [2026-11-02 audit](docs/AUDIT-2026-11-02.md) records findings against commit fef998b, including DNS/IPv6/redirect
+SSRF gaps, unsafe result URL schemes, response-size limits, cache identity and research API resource limits.
+Read that report and the current fixes before exposing the service or enabling untrusted page fetching.
+
+Bind local-agent services to loopback; publish container ports with an explicit host IP.
+The engine timeout and suspension mechanisms are availability controls, not complete SSRF or memory-exhaustion defenses.
+An authenticated proxy is not automatically a safe resolver for untrusted destinations.
+
+## Untrusted destination checks
+
+Page reads (MCP `read_page`, search raw content and research), images and favicons
+use a direct-only client with URL checks on every redirect. DNS is resolved once
+per connection; non-global addresses are dropped and only the global ones reach
+the connector, and an answer with no global address at all is refused.
+The connector uses those checked addresses. Private configured engine endpoints
+do not grant exceptions to page or media fetching. IPv4, IPv6, mapped addresses,
+NAT64 and 6to4 destinations are checked. Proxies, including environment proxies,
+disable these reads because remote DNS cannot be validated by this client.
+Administrators should also enforce network egress restrictions for their deployment;
+application checks cannot control local routing or custom address translation.
+
+Engine requests use a separate client because an engine may legitimately be
+self-hosted. It applies the same per-hop rule: a redirect may stay on the
+engine's own origin (same scheme, host and port), and every other target has to
+be a public http(s) URL whose DNS answer contains at least one global address;
+non-global addresses in that answer are not connected to.
+The host names of configured engine endpoints are the only exemption from that
+address rule, so a LAN engine keeps working while a redirect target does not
+inherit the exemption. Decoded engine response bodies are cut while streaming at
+8 MiB (previously unbounded), so one hostile or compromised upstream cannot
+inflate the process by the size of its reply.
+
+`server.secret_key` defaults to empty. At startup RustXNG replaces an empty key
+or the historical `ultrasecretkey` example with 32 cryptographically random bytes.
+The generated key lasts for that Searcher instance; signed media links expire on
+restart. For multiple workers or stable links, set your own shared random secret
+through the configuration or `SEARXNG_SECRET`. Signatures do not replace destination checks.
+
+`format=csv` prefixes a value that starts with `=`, `+`, `-`, `@`, a tab or a
+carriage return with an apostrophe, so a spreadsheet stores text instead of
+evaluating a formula taken from an engine title or snippet. The visible value is
+unchanged and other formats are unaffected.
+
+Offline regression tests exercise image, favicon, raw-content and research routes
+against owned local servers and injected DNS answers. They verify no TCP connections
+reach the private destination, including after redirects; no external DNS service or LLM is used.
+
+## Dependency checks
+
+The current v0.30.0 lockfile no longer includes `basic-toml`, `fxhash` or `unsafe-libyaml`, and the checked-in `.github/security-baseline.json` has an empty `findings` list. These are repository-state observations, **not** a claim that a fresh RustSec advisory scan was run for this documentation update or that no future advisory can affect a dependency. The reports below are dated historical snapshots.
+
+```bash
+cargo install cargo-audit --locked
+cargo audit
+```
+
+Licences, banned constructs and registry sources are checked by `cargo deny` using [deny.toml](deny.toml);
+see [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for the policy and the process for adding an exception.
+
+The recorded audit found `ctutils 0.4.2` / RUSTSEC-2026-0385 and unsoundness advisories for `lru 0.12.5`,
+plus maintenance warnings. The default `db-engines` feature enables the PostgreSQL and MySQL dependency chains;
+it is incorrect to claim these dependencies are absent from the default build.
+See the [recorded advisory output](docs/audit/2026-11-02/dependencies.json).
+This is a dated snapshot, not a claim about the latest advisory database or exploitability of every dependency path.
+
+The [2026-11-03 audit comparison](docs/audit/2026-11-03/dependencies-summary.json) records an update to
+ctutils 0.4.4 for RUSTSEC-2026-0385. The vulnerability section is then empty, but two `lru 0.12.5`
+unsoundness advisories through MySQL and three maintenance warnings remain. They are tracked in
+[issue #64](https://github.com/RustXNG/RustXNG/issues/64); this is not an advisory-free dependency tree.
+
+The [subsequent dependency update](docs/DEPENDENCY-SECURITY-2026-11-03.md) removes
+the affected `lru` version and updates `serde_with` for GHSA-7gcf-g7xr-8hxj.
+That dated RustSec scan found no vulnerabilities or unsoundness findings, but **at that time** three
+maintenance warnings remained under [issue #79](https://github.com/RustXNG/RustXNG/issues/79). Those three packages have since been removed from the current lockfile.
+
+Updates require review of actual usage, a locked dependency check, tests and platform/MSRV verification.
+Do not silently suppress a security advisory or present a clean normal CI run as a security audit.
+
+## Maintainer and workflow access
+
+Workflow tokens are read-only by default. Release automation requests PR-creation and publication permissions only in its trusted jobs; it does not approve reviews or merge release PRs.
+Version tags are protected against updates and deletion; publication requires the exact versioned commit to have passed main CI. New collaborators must follow the review and access procedure in [MAINTAINERS.md](MAINTAINERS.md).
+No application, PR, social-media reply, or AI recommendation automatically grants write or administrative access.
+
+## Continuous advisory checks
+
+The CI and daily security workflow record the complete RustSec report. Vulnerabilities always fail.
+Historical maintenance findings were tracked in `.github/security-baseline.json`, tied to issue #79.
+The current file has no accepted findings. New warnings or vulnerabilities, invalid reports, and an expired
+nonempty baseline fail the check. The recorded expiry is 2026-12-03; the baseline is not a safety certification.

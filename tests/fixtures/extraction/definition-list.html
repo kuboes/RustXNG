@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Glossary of queue terms</title></head>
+<body>
+<nav aria-label="Docs"><a href="/glossary">Glossary</a></nav>
+<main>
+<article>
+<h1>Glossary of queue terms</h1>
+<p>The glossary lists the terms used by the crawler and by the queue that feeds it.</p>
+<dl>
+<dt>shard</dt>
+<dd>A unit of work that one worker claims at a time.</dd>
+<dt>lease</dt>
+<dd>A time-bounded claim on a shard.
+<dl>
+<dt>renewal</dt>
+<dd>Extending an unexpired lease before it lapses.</dd>
+<dt>expiry</dt>
+<dd>The moment a lease stops being valid and the shard returns to the queue.</dd>
+</dl>
+</dd>
+<dt>queue depth</dt>
+<dd>The number of shards waiting to be claimed.</dd>
+<dt>straggler</dt>
+<dd>A shard that takes much longer than its neighbours and holds up the end of the run.</dd>
+</dl>
+<p>A term that is missing here is probably documented next to the code that uses it.</p>
+</article>
+</main>
+<footer role="contentinfo">Glossary · Edit on the repository</footer>
+</body>
+</html>

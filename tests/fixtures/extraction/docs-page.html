@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>rustxng-index reference</title><style>body{}</style></head>
+<body>
+<nav aria-label="Site"><a href="/">Home</a><a href="/docs">Documentation</a></nav>
+<article>
+  <header><h1>rustxng-index</h1><p class="lead">Build and query a local index.</p></header>
+  <p>Run <code>rustxng-index crawl</code> to collect pages, then query them offline.</p>
+  <table>
+    <caption>Table 1: Flags</caption>
+    <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>--dry-run</code></td><td>Report the plan without writing</td></tr>
+      <tr><td><code>--workers</code></td><td>Concurrent fetchers</td></tr>
+    </tbody>
+  </table>
+  <p>Without <code>--dry-run</code> the files are left untouched only after a successful run<sup><a href="#n1">[1]</a></sup>.</p>
+  <pre><code>cargo run --release --example local_quality -- index-docs bench/quality-questions-100.json</code></pre>
+  <ol><li id="n1">The index writer commits at the end of the run.</li></ol>
+</article>
+<footer>Copyright 2026 Example</footer>
+</body>
+</html>

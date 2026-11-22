@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><title>同時取得数を絞る理由 — 実装ノート</title></head>
+<body>
+<header role="banner"><a href="/">実装ノート</a></header>
+<nav role="navigation"><a href="/">ホーム</a><a href="/archive">過去の記事</a></nav>
+<article>
+<header><h1>同時取得数を絞る理由</h1><p>2026年11月17日 更新</p></header>
+<p>同時に動くワーカー数を絞ると、待ち時間の合計はむしろ短くなることが多い。相手のサーバーが遅いときに並列度を上げても、待ち行列が伸びるだけで終わるからです。</p>
+<h2>設定ファイル</h2>
+<pre><code>workers:
+  fetch: 8
+  index: 2
+</code></pre>
+<p>この値は設定ファイルの <code>workers</code> の下に置きます。値を変えたあとはプロセスを再起動してください。</p>
+<aside><p>補足: 上限に達したワーカーは新しい要求を取らずに待機します。</p></aside>
+<h2>計測の手順</h2>
+<ol>
+<li>変更前の取得時間を一分間記録します。</li>
+<li>同時取得数を半分にします。</li>
+<li>同じ条件でもう一度記録し、中央値を比べます。</li>
+</ol>
+<p>中央値が悪化していなければ、その設定を既定値として残してかまいません。</p>
+</article>
+<footer role="contentinfo">© 2026 実装ノート · プライバシー</footer>
+</body>
+</html>

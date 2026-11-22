@@ -1,0 +1,469 @@
+{
+  "version": 2,
+  "note": "Offline extraction corpus: every page states what the reader must keep and what must stay out. All pages are synthetic or public-domain text; no network is used.",
+  "files": [
+    {
+      "file": "docs-page.html",
+      "must_contain": [
+        "Table 1: Flags",
+        "| Flag | Meaning |",
+        "| --- | --- |",
+        "| --dry-run | Report the plan without writing |",
+        "The index writer commits at the end of the run.",
+        "cargo run --release --example local_quality",
+        "left untouched only after a successful run [1]."
+      ],
+      "must_not_contain": [
+        "Documentation",
+        "Copyright 2026 Example"
+      ],
+      "min_chars": 200
+    },
+    {
+      "file": "math-page.html",
+      "must_contain": [
+        "e^{i\\pi} + 1 = 0",
+        "a+b",
+        "special case"
+      ],
+      "must_not_contain": [
+        "iπ",
+        "Share this article"
+      ],
+      "min_chars": 120
+    },
+    {
+      "file": "ja-docs.html",
+      "must_contain": [
+        "| 項目 | 既定値 |",
+        "| workers | 8 |",
+        "同時に取得するページ数です。",
+        "rustxng-index crawl --seed https://docs.python.org/3/"
+      ],
+      "must_not_contain": [
+        "ホーム",
+        "© 2026 Example"
+      ],
+      "min_chars": 120
+    },
+    {
+      "file": "rfc-page.html",
+      "must_contain": [
+        "| RFC 9999 | Example Protocol | November 2026 |",
+        "1. Introduction",
+        "Implementations MUST send the header before the body."
+      ],
+      "must_not_contain": [],
+      "min_chars": 150
+    },
+    {
+      "file": "news-page.html",
+      "must_contain": [
+        "The release notes list the new lints",
+        "By A. Writer",
+        "Related: earlier release notes."
+      ],
+      "must_not_contain": [
+        "Subscribe to our newsletter!",
+        "About · Contact",
+        "Example News"
+      ],
+      "min_chars": 120
+    },
+    {
+      "file": "tech-docs-tabs.html",
+      "must_contain": [
+        "Configuring workers",
+        "Workers claim shards from a queue rather than from a single counter",
+        "  fetch: 16",
+        "  index: 4",
+        "  lease_seconds: 30",
+        "A lease that is too short re-fetches shards",
+        "the fetch pool is bound by the network rather than by the workers.",
+        "Restart the crawler with the new file."
+      ],
+      "must_not_contain": [
+        "© 2026 Example Docs",
+        "Getting started",
+        "Search docs",
+        "window.analytics"
+      ],
+      "min_chars": 600
+    },
+    {
+      "file": "news-longform.html",
+      "must_contain": [
+        "City council approves the transit plan",
+        "By M. Reporter · 17 November 2026",
+        "RIVERSIDE — The council voted 7 to 2",
+        "we are buying twenty years of predictable commutes",
+        "The debate lasted just under two hours."
+      ],
+      "must_not_contain": [
+        "The Example Ledger",
+        "More from this section",
+        "Privacy · Terms",
+        "In this article"
+      ],
+      "min_chars": 600
+    },
+    {
+      "file": "academic-paper.html",
+      "must_contain": [
+        "Lease-based shard claiming for cooperative crawlers",
+        "Keywords: crawlers, leases, work stealing",
+        "2. Method",
+        "A dead worker stops renewing, and the shard returns to the queue",
+        "shorter than a fixed partition of the same shards [2].",
+        "S. Writer. Work stealing revisited."
+      ],
+      "must_not_contain": [
+        "Citation formats available on request",
+        "Search"
+      ],
+      "min_chars": 800
+    },
+    {
+      "file": "github-readme.html",
+      "must_contain": [
+        "example/toolkit",
+        "Small helpers for text pipelines",
+        "cargo install --path crates/toolkit",
+        "toolkit extract --input pages/ --format jsonl > out.jsonl",
+        "keeps table rows as Markdown pipes",
+        "--limit maximum characters per page"
+      ],
+      "must_not_contain": [
+        "Pull requests",
+        "Contents",
+        "© 2026 Contributors",
+        "Star"
+      ],
+      "min_chars": 500
+    },
+    {
+      "file": "table-finance.html",
+      "must_contain": [
+        "Table 2: Ledger by quarter",
+        "| Quarter | Revenue | Cost | Margin |",
+        "| --- | --- | --- | --- |",
+        "| Q1 | 1,200 | 800 | 33% |",
+        "| Q3 | 1,180 | 905 | 23% |",
+        "| Year | 3,730 | 2,515 | 32% |"
+      ],
+      "must_not_contain": [
+        "Example Finance",
+        "Do not distribute"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "code-blocks-langs.html",
+      "must_contain": [
+        "    name, value = line.split(\"=\", 1)",
+        "fn parse(line: &str) -> Option<(&str, i64)>",
+        "while IFS='=' read -r name value; do",
+        "-old_name = value",
+        "+new_name = value"
+      ],
+      "must_not_contain": [
+        "Example Languages Blog",
+        "Languages"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "math-equations.html",
+      "must_contain": [
+        "E = mc^2",
+        "\\int_0^1 x^2\\,dx = \\frac{1}{3}",
+        "a + b = b + a",
+        "Three identities worth remembering"
+      ],
+      "must_not_contain": [
+        "Share this article",
+        "Mathematics"
+      ],
+      "min_chars": 300
+    },
+    {
+      "file": "ja-tech-blog.html",
+      "must_contain": [
+        "同時取得数を絞る理由",
+        "同時に動くワーカー数を絞ると、待ち時間の合計はむしろ短くなることが多い。",
+        "  fetch: 8",
+        "  index: 2",
+        "補足: 上限に達したワーカーは新しい要求を取らずに待機します。",
+        "中央値が悪化していなければ"
+      ],
+      "must_not_contain": [
+        "ホーム",
+        "過去の記事",
+        "© 2026 実装ノート"
+      ],
+      "min_chars": 300
+    },
+    {
+      "file": "ko-manual.html",
+      "must_contain": [
+        "설치 안내",
+        "러스트 컴파일러 1.80 이상",
+        "cargo build --release",
+        "target/release/toolkit --version",
+        "| 오류 | 원인 | 해결 |",
+        "| 권한 거부 | 캐시 디렉터리 소유자 불일치 | 캐시를 지우고 다시 빌드한다 |",
+        "표에 없는 오류는"
+      ],
+      "must_not_contain": [
+        "시작하기",
+        "© 2026 예제 도구"
+      ],
+      "min_chars": 350
+    },
+    {
+      "file": "multilingual-spec.html",
+      "must_contain": [
+        "The value ends at the first line break that is not followed by a space.",
+        "フィールド名はコロンを除く可視 ASCII 文字で構成します。",
+        "필드 이름은 콜론을 제외한 출력 가능한 ASCII 문자로 구성합니다.",
+        "字段名由除冒号以外的可见 ASCII 字符组成。",
+        "Ein Feldname besteht aus sichtbaren ASCII-Zeichen"
+      ],
+      "must_not_contain": [
+        "Specifications",
+        "Example Standards Body"
+      ],
+      "min_chars": 500
+    },
+    {
+      "file": "broken-html.html",
+      "must_contain": [
+        "Recovering a broken page",
+        "Unclosed paragraph one",
+        "Second paragraph with a stray bold tag",
+        "Third paragraph closes out of order",
+        "A div that never ends",
+        "first item",
+        "second item"
+      ],
+      "must_not_contain": [],
+      "min_chars": 150
+    },
+    {
+      "file": "nav-heavy.html",
+      "must_contain": [
+        "Search operators reference",
+        "The query language accepts three operators.",
+        "| site: | site:example.org leases | Restrict the result to one host |",
+        "An operator only applies to the term that follows it"
+      ],
+      "must_not_contain": [
+        "Mega menu",
+        "Pagination",
+        "Breadcrumb",
+        "Products",
+        "Privacy",
+        "Community"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "ads-cookie-banner.html",
+      "must_contain": [
+        "Why the lease expires",
+        "A lease that never expires is not a lease, it is a lock.",
+        "The queue therefore needs one operation, renew"
+      ],
+      "must_not_contain": [
+        "We use cookies to measure traffic",
+        "Advertisement — buy widget parts at WidgetCo",
+        "Advertisement — managed queues for teams",
+        "Subscribe to our newsletter for weekly notes on queueing.",
+        "Sponsored by WidgetCo: managed queues for small teams",
+        "Manage cookie settings",
+        "© 2026 Example Journal"
+      ],
+      "min_chars": 300
+    },
+    {
+      "file": "quotes-footnotes.html",
+      "must_contain": [
+        "The long quote and the short note",
+        "An unmarked quotation is indistinguishable",
+        "— A. Editor, Notes on Style, 1998",
+        "Quoted with permission of the estate.",
+        "Style guides differ on the exact placement of the marker."
+      ],
+      "must_not_contain": [
+        "Cite this page",
+        "Essays"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "definition-list.html",
+      "must_contain": [
+        "Glossary of queue terms",
+        "shard\nA unit of work that one worker claims at a time.",
+        "lease\nA time-bounded claim on a shard.",
+        "renewal\nExtending an unexpired lease before it lapses.",
+        "expiry\nThe moment a lease stops being valid"
+      ],
+      "must_not_contain": [
+        "Edit on the repository",
+        "Docs"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "image-captions.html",
+      "must_contain": [
+        "Inside the depot",
+        "Figure 1: Six trams parked nose to tail under the shed roof.",
+        "Figure 2: Inspection under the first track, where the pit is deepest.",
+        "By the fourth morning the shed was empty again"
+      ],
+      "must_not_contain": [
+        "Galleries",
+        "© 2026 Example Photo Essay"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "docs-api-reference.html",
+      "must_contain": [
+        "extract_page",
+        "pub fn extract_page(html: &Html, max_chars: usize) -> String",
+        "| max_chars | usize | Upper bound on the returned characters |",
+        "The bound applies after the container is chosen"
+      ],
+      "must_not_contain": [
+        "Edit this page",
+        "Reference"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "recipe-page.html",
+      "must_contain": [
+        "Overnight rye with a rye starter",
+        "| Cold proof | 12 hours | 5 C |",
+        "400 g rye flour",
+        "Add the starter and the salt",
+        "Tip: rye dough stays sticky",
+        "Cool the loaf completely before slicing"
+      ],
+      "must_not_contain": [
+        "flour subscription boxes",
+        "Example Kitchen",
+        "Techniques"
+      ],
+      "min_chars": 500
+    },
+    {
+      "file": "forum-thread.html",
+      "must_contain": [
+        "Why does my lease keep expiring?",
+        "op — 17 Nov 2026",
+        "The lease measures time without a renewal, not time without progress.",
+        "  every: 3",
+        "Renewing on a timer fixed it."
+      ],
+      "must_not_contain": [
+        "Categories",
+        "Latest",
+        "Reply",
+        "Like",
+        "Example Forum"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "single-page-no-semantic-tags.html",
+      "must_contain": [
+        "Notes on the old build server",
+        "The build server ran for nine years",
+        "one of which had been silently failing since the spring",
+        "took eleven minutes and one command"
+      ],
+      "must_not_contain": [
+        "Home",
+        "© 2026 Example Notes",
+        "Powered by a static generator"
+      ],
+      "min_chars": 300
+    },
+    {
+      "file": "wikipedia-style.html",
+      "must_contain": [
+        "| Type | Distributed work queue |",
+        "| First described | 2019 |",
+        "A shard queue distributes units of work to workers",
+        "Claim protocols for crawlers"
+      ],
+      "must_not_contain": [
+        "Privacy policy",
+        "Disclaimers",
+        "Article\nHistory\nDesign\nReferences"
+      ],
+      "min_chars": 500
+    },
+    {
+      "file": "dataset-pre-table.html",
+      "must_contain": [
+        "worker,shard,hold_ms,renewed",
+        "w2,s19,1204,false",
+        "| worker | shard | hold_ms | renewed |",
+        "| w2 | s19 | 1204 | false |"
+      ],
+      "must_not_contain": [
+        "| --- |",
+        "Example Data Notes"
+      ],
+      "min_chars": 300
+    },
+    {
+      "file": "changelog-page.html",
+      "must_contain": [
+        "Changelog",
+        "0.27.1 — 2026-11-03",
+        "Fix a panic when the input directory is empty.",
+        "toolkit extract --limit 4000",
+        "0.27.0 — 2026-10-21",
+        "Add --format jsonl."
+      ],
+      "must_not_contain": [
+        "Issues",
+        "© 2026 toolkit contributors"
+      ],
+      "min_chars": 400
+    },
+    {
+      "file": "tutorial-steps.html",
+      "must_contain": [
+        "Build a shard queue in twenty minutes",
+        "CREATE TABLE shard (id INTEGER PRIMARY KEY, lease_until INTEGER);",
+        "UPDATE shard SET lease_until = $1 WHERE id = $2 AND lease_until < $3;",
+        "Tip: the conditional update returns the number of rows",
+        "Warning: renewal must never extend a lease that already expired"
+      ],
+      "must_not_contain": [
+        "Next lesson: expiry",
+        "© 2026 Example Learn"
+      ],
+      "min_chars": 500
+    },
+    {
+      "file": "huge-document.html",
+      "must_contain": [
+        "Paragraph 0001 opens the history",
+        "Paragraph 0200 records a step in the story",
+        "Paragraph 400 ends the history"
+      ],
+      "must_not_contain": [
+        "© 2026 Example History"
+      ],
+      "min_chars": 100000
+    }
+  ]
+}

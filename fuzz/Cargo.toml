@@ -1,0 +1,72 @@
+[package]
+name = "rustxng-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Fuzzing harnesses for the parsers that read untrusted bytes"
+
+[package.metadata]
+cargo-fuzz = true
+
+# A standalone workspace. The product crate has no [workspace] table of its
+# own, so this keeps the harnesses out of the root build: they need the
+# sanitizer toolchain that cargo-fuzz sets up, and CI only has to build the
+# product.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The parsers under test, exactly as the product builds them. The key-value
+# engine that owns the RESP reply parser lives behind `db-engines`, so the
+# feature stays on; the other harnesses only use modules that are always built.
+rustxng = { path = "..", features = ["db-engines"] }
+# The same HTML parser the product uses, for the extraction target.
+scraper = "0.29"
+# Same TOML type as `EngineConfig::extra`, which configures the reply target.
+toml = "1.2"
+
+[[bin]]
+name = "content_extract"
+path = "fuzz_targets/content_extract.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resp_reply"
+path = "fuzz_targets/resp_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xpath_subset"
+path = "fuzz_targets/xpath_subset.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "robots_txt"
+path = "fuzz_targets/robots_txt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sitemap"
+path = "fuzz_targets/sitemap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proxy_signature"
+path = "fuzz_targets/proxy_signature.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

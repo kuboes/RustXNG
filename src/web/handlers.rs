@@ -1,0 +1,1727 @@
+//! Request handlers, ported from the view functions of `searx/webapp.py`.
+
+use axum::Form;
+use axum::body::Bytes;
+use axum::extract::{Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
+use serde::Deserialize;
+
+use super::limiter::{ClientAddr, LimiterVerdict};
+use super::preferences::{Preferences, join_list, split_list};
+use super::{
+    AboutTemplate, AppState, ErrorTemplate, IndexTemplate, PreferencesTemplate, ResultView,
+    ResultsTemplate, StatsTemplate, category_views, engine_views, render, with_cookies,
+};
+use crate::aggregator::{SearchRequest, SearchResponse};
+use crate::engine::util::encode;
+use crate::plugins::UserInfo;
+use crate::query::{Query as SearchQuery, TimeRange};
+use crate::version::VERSION;
+
+/// Every query string parameter of `/search`, like upstream's `request.form`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SearchParams {
+    pub q: Option<String>,
+    pub category: Option<String>,
+    pub categories: Option<String>,
+    pub engine: Option<String>,
+    pub engines: Option<String>,
+    pub language: Option<String>,
+    pub locale: Option<String>,
+    pub pageno: Option<u32>,
+    pub safesearch: Option<u8>,
+    pub time_range: Option<String>,
+    pub format: Option<String>,
+    pub timeout_limit: Option<f64>,
+    pub theme: Option<String>,
+    pub autocomplete: Option<String>,
+    pub enabled_engines: Option<String>,
+    /// Fail the request when `engines=` names an engine that does not exist.
+    pub strict_engines: Option<String>,
+    pub disabled_engines: Option<String>,
+    pub enabled_plugins: Option<String>,
+    pub disabled_plugins: Option<String>,
+    pub image_proxy: Option<String>,
+    /// \`full=1\` returns the rich JSON with timings and counters.
+    pub full: Option<String>,
+    /// Agent-facing extension: keep at most this many results.
+    pub max_results: Option<usize>,
+    /// Agent-facing extension: keep only these domains (comma separated).
+    pub include_domains: Option<String>,
+    /// Agent-facing extension: drop these domains (comma separated).
+    pub exclude_domains: Option<String>,
+    /// Agent-facing extension: fetch and return the page text of the top results.
+    pub include_raw_content: Option<String>,
+    /// Explicit Accept-Language preference for raw page content.
+    pub accept_language: Option<String>,
+    /// Engine start strategy: "parallel" (default) or "staged".
+    pub strategy: Option<String>,
+}
+
+/// Parameters of `/autocompleter`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AutocompleteParams {
+    pub q: Option<String>,
+    pub backend: Option<String>,
+    pub locale: Option<String>,
+}
+
+/// `GET /` — the search form, or a search when `q` is set.
+pub async fn index(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+    peer: ClientAddr,
+    headers: HeaderMap,
+) -> Response {
+    if params
+        .q
+        .as_deref()
+        .map(|query| !query.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return run_search(state, params, headers, peer).await;
+    }
+    search_form(&state, &headers, None)
+}
+
+/// `GET /search`.
+pub async fn search_get(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+    peer: ClientAddr,
+    headers: HeaderMap,
+) -> Response {
+    run_search(state, params, headers, peer).await
+}
+
+/// `POST /search`.
+pub async fn search_post(
+    State(state): State<AppState>,
+    peer: ClientAddr,
+    headers: HeaderMap,
+    Form(params): Form<SearchParams>,
+) -> Response {
+    run_search(state, params, headers, peer).await
+}
+
+fn search_form(state: &AppState, headers: &HeaderMap, error: Option<String>) -> Response {
+    let preferences = preferences_of(headers, state);
+    let categories = category_views(&state.searcher, &preferences.categories);
+    render(IndexTemplate {
+        instance_name: state.settings().general.instance_name.clone(),
+        version: VERSION.to_string(),
+        query: String::new(),
+        categories,
+        engines: engine_views(&state.searcher),
+        method: preferences.method,
+        autocomplete: preferences.autocomplete,
+        autocomplete_min: state.settings().search.autocomplete_min,
+        has_error: error.is_some(),
+        error: error.unwrap_or_default(),
+        engine_count: state.searcher.registry.len(),
+        time_range: String::new(),
+        time_ranges: super::time_range_options(),
+    })
+}
+
+/// Longest accepted query string, in characters.
+///
+/// The value bounds the URL every engine builds and the work done in query
+/// parsing; longer input is rejected with a 400 in the requested format.
+const MAX_QUERY_CHARS: usize = 2048;
+
+use crate::settings::MAX_PAGENO;
+
+/// Run a search and render it in the requested format.
+async fn run_search(
+    state: AppState,
+    params: SearchParams,
+    headers: HeaderMap,
+    peer: ClientAddr,
+) -> Response {
+    let searcher = state.searcher.clone();
+    let settings = searcher.settings.clone();
+    let preferences = preferences_of(&headers, &state);
+
+    let format = params
+        .format
+        .clone()
+        .filter(|format| !format.is_empty())
+        .unwrap_or_else(|| "html".to_string());
+    // Check the limiter before validating the rest of the query: a rejected
+    // request still costs a response, so an invalid one must not be free.
+    if let Some(response) = limiter_response(
+        &state,
+        &format,
+        state.limiter.check(peer.0, &headers, &format),
+    ) {
+        return response;
+    }
+    if !settings.search.formats.contains(&format) {
+        return format_error(
+            &state,
+            &format,
+            StatusCode::BAD_REQUEST,
+            &format!("format {format:?} is not enabled on this instance"),
+        );
+    }
+
+    let raw_query = params.q.clone().unwrap_or_default();
+    if raw_query.trim().is_empty() {
+        return format_error(&state, &format, StatusCode::BAD_REQUEST, "missing query");
+    }
+    if raw_query.chars().count() > MAX_QUERY_CHARS {
+        return format_error(
+            &state,
+            &format,
+            StatusCode::BAD_REQUEST,
+            &format!("query is too long: the limit is {MAX_QUERY_CHARS} characters"),
+        );
+    }
+    let accept_language = match crate::fetch::AcceptLanguage::parse(
+        params.accept_language.as_deref().unwrap_or_default(),
+    ) {
+        Ok(language) => language,
+        Err(message) => {
+            return format_error(&state, &format, StatusCode::BAD_REQUEST, &message);
+        }
+    };
+
+    let mut query = SearchQuery::parse(
+        &raw_query,
+        &searcher.registry,
+        &preferences.disabled_engines,
+    );
+    query.locale = params
+        .locale
+        .clone()
+        .filter(|value| !value.is_empty())
+        .or_else(|| Some(preferences.locale.clone()).filter(|value| !value.is_empty()))
+        .unwrap_or_default();
+    // Upstream `parse_lang`: `:lang` bang > `language` parameter > language
+    // preference. Until now the parameter was only echoed back into the
+    // paging links and never reached the engines.
+    if let Some(language) = params.language.as_deref() {
+        if let Err(message) = query.apply_language_param(language) {
+            return format_error(&state, &format, StatusCode::BAD_REQUEST, &message);
+        }
+    }
+    let language_requested = !query.languages.is_empty();
+    query.apply_language_preference(&preferences.language);
+    // Most engines take their language/region from `query.locale`, so an
+    // explicitly requested language doubles as the locale — unless the
+    // caller picked a locale as well.
+    if language_requested
+        && params
+            .locale
+            .as_deref()
+            .map(|value| value.is_empty())
+            .unwrap_or(true)
+    {
+        if let Some(language) = query.languages.first() {
+            query.locale = if language == "auto" {
+                query.engine_language()
+            } else {
+                language.clone()
+            };
+        }
+    }
+    query.follow_query_script(
+        language_requested
+            || params
+                .locale
+                .as_deref()
+                .is_some_and(|value| !value.is_empty()),
+    );
+    query.pageno = params.pageno.unwrap_or(1).max(1);
+    query.time_range = params.time_range.as_deref().and_then(TimeRange::parse);
+    query.safesearch = params.safesearch.unwrap_or(preferences.safesearch).min(2);
+    if let Some(timeout_limit) = params.timeout_limit {
+        if !crate::aggregator::is_valid_timeout_limit(timeout_limit) {
+            let message = format!(
+                "timeout_limit must be a finite number of seconds greater than 0 and at most {}",
+                crate::aggregator::MAX_TIMEOUT_LIMIT
+            );
+            return format_error(&state, &format, StatusCode::BAD_REQUEST, &message);
+        }
+        query.timeout_limit = Some(timeout_limit);
+    }
+
+    let categories = split_param(params.categories.as_deref())
+        .or_else(|| split_param(params.category.as_deref()))
+        .unwrap_or_else(|| preferences.categories.clone());
+    let engines = split_param(params.engines.as_deref())
+        .or_else(|| split_param(params.engine.as_deref()))
+        .unwrap_or_default();
+
+    let max_page = if settings.search.max_page > 0 {
+        settings.search.max_page
+    } else {
+        preferences.max_page
+    };
+    // `search.max_page = 0` means "no configured limit", but the page number
+    // still feeds offset arithmetic inside every engine, so an unbounded value
+    // overflows those offsets (A16 in docs/AUDIT-2026-11-02.md).
+    let page_limit = if max_page > 0 {
+        max_page.min(MAX_PAGENO)
+    } else {
+        MAX_PAGENO
+    };
+    if query.pageno > page_limit {
+        return format_error(
+            &state,
+            &format,
+            StatusCode::BAD_REQUEST,
+            &format!("page number is out of range: {page_limit} is the maximum number of pages"),
+        );
+    }
+
+    let enabled_plugins = split_param(params.enabled_plugins.as_deref())
+        .unwrap_or_else(|| preferences.enabled_plugins.clone());
+    let disabled_plugins = split_param(params.disabled_plugins.as_deref())
+        .unwrap_or_else(|| preferences.disabled_plugins.clone());
+    let language = query.engine_language();
+
+    let user = user_info(&state, &peer, &headers);
+
+    let request = SearchRequest {
+        query: query.clone(),
+        pageno: query.pageno,
+        categories: categories.clone(),
+        engines: engines.clone(),
+        disabled_engines: preferences.disabled_engines.clone(),
+        time_range: query.time_range,
+        safesearch: query.safesearch,
+        language,
+        timeout_limit: query.timeout_limit,
+        enabled_plugins,
+        disabled_plugins,
+        locale: query.locale.clone(),
+        user,
+        max_results: params.max_results.map(|limit| limit.clamp(1, 200)),
+        include_domains: split_param(params.include_domains.as_deref()).unwrap_or_default(),
+        exclude_domains: split_param(params.exclude_domains.as_deref()).unwrap_or_default(),
+        include_raw_content: params
+            .include_raw_content
+            .as_deref()
+            .map(|value| matches!(value, "1" | "true" | "on" | "yes"))
+            .unwrap_or(false),
+        accept_language,
+        strict_engines: params
+            .strict_engines
+            .as_deref()
+            .map(|value| matches!(value, "1" | "true" | "on" | "yes"))
+            .unwrap_or(false),
+        site_retry_done: false,
+        strategy: match params.strategy.as_deref() {
+            Some("staged") => crate::settings::SearchStrategy::Staged,
+            Some("parallel") => crate::settings::SearchStrategy::Parallel,
+            _ => settings.search.strategy,
+        },
+    };
+
+    let response = searcher.search(request).await;
+    if let Some(error) = &response.error {
+        return format_error(&state, &format, StatusCode::BAD_REQUEST, error);
+    }
+    if let Some(url) = response.redirect_url.clone() {
+        // `redirect_url` is engine-controlled: `Redirect::to` panics on a
+        // value that is not a valid header, so check first and fall back to
+        // the results page when the engine sent something unusable.
+        if let Ok(location) = axum::http::HeaderValue::from_str(&url) {
+            return (StatusCode::FOUND, [(header::LOCATION, location)]).into_response();
+        }
+    }
+
+    match format.as_str() {
+        "json" => {
+            // Suspensions live in the engine runtime state, not in the
+            // response, so the views are derived from the searcher.
+            let suspended = super::suspended_engine_views(state.searcher.as_ref());
+            let full = params
+                .full
+                .as_deref()
+                .map(|value| matches!(value, "1" | "true" | "on" | "yes"))
+                .unwrap_or(false);
+            if full {
+                axum::Json(super::feeds::json_response_full(&response, &suspended)).into_response()
+            } else {
+                axum::Json(super::feeds::upstream_json(&response, &suspended)).into_response()
+            }
+        }
+        "csv" => super::feeds::csv_response(&response),
+        "rss" => super::feeds::rss_response(&state, &response, &raw_query),
+        _ => results_page(
+            &state,
+            &preferences,
+            &response,
+            &params,
+            &categories,
+            &engines,
+        ),
+    }
+}
+
+fn results_page(
+    state: &AppState,
+    preferences: &Preferences,
+    response: &SearchResponse,
+    params: &SearchParams,
+    categories: &[String],
+    engines: &[String],
+) -> Response {
+    let base = state.base_url();
+    let query = response.query.clone();
+    let category = categories.join(",");
+    let engine = engines.join(",");
+    let language = params.language.clone().unwrap_or_default();
+    let time_range = params.time_range.clone().unwrap_or_default();
+    let pageno = response.pageno.max(1);
+
+    let mut base_params: Vec<(&str, String)> = vec![("q", query.clone())];
+    if !category.is_empty() {
+        base_params.push(("category", category));
+    }
+    if !engine.is_empty() {
+        base_params.push(("engine", engine));
+    }
+    if !language.is_empty() {
+        base_params.push(("language", language));
+    }
+    if !time_range.is_empty() {
+        base_params.push(("time_range", time_range));
+    }
+    let count = response.results.len().max(1) as u32;
+    let page_of = |page: u32| {
+        let mut pairs: Vec<(&str, String)> = base_params.clone();
+        pairs.push(("pageno", page.to_string()));
+        let query = pairs
+            .iter()
+            .map(|(key, value)| format!("{}={}", encode(key), encode(value)))
+            .collect::<Vec<_>>()
+            .join("&");
+        format!("{base}/search?{query}")
+    };
+    let prev_url = (pageno > 1).then(|| page_of(pageno - 1));
+    let next_url = (response.paging && !response.results.is_empty())
+        .then(|| page_of(pageno + 1))
+        .filter(|_| count > 0 && response.paging);
+
+    let timings: Vec<(String, String)> = response
+        .timings
+        .iter()
+        .map(|timing| {
+            (
+                timing.engine.clone(),
+                format!("{:.0} ms", timing.total * 1000.0),
+            )
+        })
+        .collect();
+    let unresponsive: Vec<String> = response
+        .unresponsive_engines
+        .iter()
+        .map(|engine| {
+            if engine.suspended {
+                format!("{}: {} (suspended)", engine.engine, engine.error_type)
+            } else {
+                format!("{}: {}", engine.engine, engine.error_type)
+            }
+        })
+        .collect();
+
+    let mut results: Vec<ResultView> = response
+        .results
+        .iter()
+        .map(ResultView::from_result)
+        .collect();
+    if preferences.image_proxy {
+        let secret = &state.settings().server.secret_key;
+        for result in &mut results {
+            if !result.img_src.is_empty() {
+                result.img_src_proxy =
+                    super::image_proxy::proxied_url(&base, secret, &result.img_src);
+            }
+            if !result.thumbnail.is_empty() {
+                result.thumbnail_proxy =
+                    super::image_proxy::proxied_url(&base, secret, &result.thumbnail);
+            }
+        }
+    }
+    let infoboxes: Vec<super::InfoboxView> = response
+        .infoboxes
+        .iter()
+        .map(super::InfoboxView::from_infobox)
+        .collect();
+    let engine_data: Vec<(String, Vec<(String, String)>)> = response
+        .engine_data
+        .iter()
+        .map(|(engine, data)| {
+            (
+                engine.clone(),
+                data.iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            )
+        })
+        .collect();
+    let suspended_engines = super::suspended_engine_views(state.searcher.as_ref());
+
+    render(ResultsTemplate {
+        instance_name: state.settings().general.instance_name.clone(),
+        version: VERSION.to_string(),
+        query: response.search_query.clone(),
+        has_results: !results.is_empty(),
+        results,
+        has_answers: !response.answers.is_empty(),
+        answers: response.answers.clone(),
+        has_corrections: !response.corrections.is_empty(),
+        corrections: response.corrections.clone(),
+        has_suggestions: !response.suggestions.is_empty(),
+        suggestions: response.suggestions.clone(),
+        has_infoboxes: !infoboxes.is_empty(),
+        infoboxes,
+        has_unresponsive: !unresponsive.is_empty(),
+        unresponsive_engines: unresponsive,
+        has_suspended: !suspended_engines.is_empty(),
+        suspended_engines,
+        number_of_results: response.number_of_results,
+        pageno,
+        has_prev: prev_url.is_some(),
+        has_next: next_url.is_some(),
+        prev_url: prev_url.unwrap_or_default(),
+        next_url: next_url.unwrap_or_default(),
+        engine_count: state.searcher.registry.len(),
+        categories: category_views(&state.searcher, categories),
+        engines: engine_views(&state.searcher),
+        method: preferences.method.clone(),
+        autocomplete: preferences.autocomplete.clone(),
+        autocomplete_min: state.settings().search.autocomplete_min,
+        time_range: params.time_range.clone().unwrap_or_default(),
+        time_ranges: super::time_range_options(),
+        has_timings: !timings.is_empty(),
+        timings,
+        has_engine_data: !engine_data.is_empty(),
+        engine_data,
+    })
+}
+
+/// Whole-request budget of `/autocompleter`.
+///
+/// Each backend is one outbound request, so the handler as a whole needs a
+/// bound that does not grow with the number of names in `backend=`.
+const AUTOCOMPLETE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// `q` length cap for `/autocompleter`: suggestions are short prefixes, and
+/// the value is interpolated into upstream request URLs.
+const MAX_AUTOCOMPLETE_QUERY_CHARS: usize = 256;
+
+/// `GET /autocompleter`.
+pub async fn autocompleter(
+    State(state): State<AppState>,
+    Query(params): Query<AutocompleteParams>,
+    peer: ClientAddr,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(response) = limiter_response(
+        &state,
+        "json",
+        state.limiter.check(peer.0, &headers, "html"),
+    ) {
+        return response;
+    }
+    let query: String = params
+        .q
+        .clone()
+        .unwrap_or_default()
+        .chars()
+        .take(MAX_AUTOCOMPLETE_QUERY_CHARS)
+        .collect();
+    if query.trim().is_empty() {
+        return axum::Json(Vec::<String>::new()).into_response();
+    }
+    let preferences = preferences_of(&headers, &state);
+    let parsed = SearchQuery::parse(
+        &query,
+        &state.searcher.registry,
+        &preferences.disabled_engines,
+    );
+    if !parsed.autocomplete_list.is_empty() {
+        return axum::Json(parsed.autocomplete_list).into_response();
+    }
+    let backend = params
+        .backend
+        .clone()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| preferences.autocomplete.clone());
+    if backend == "none" || backend.is_empty() {
+        return axum::Json(Vec::<String>::new()).into_response();
+    }
+    let locale = params
+        .locale
+        .clone()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| preferences.locale.clone());
+    // `backend=` is caller input: keep only names this build actually knows,
+    // once each, so a long list cannot turn one request into many outbound
+    // calls. Unknown names used to fall through to DuckDuckGo.
+    let mut candidates: Vec<&str> = Vec::new();
+    for candidate in backend.split(',') {
+        let candidate = candidate.trim();
+        if candidate.is_empty() || !crate::autocomplete::BACKENDS.contains(&candidate) {
+            continue;
+        }
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    let lookup = async {
+        for candidate in candidates {
+            let suggestions = crate::autocomplete::suggest(
+                &state.searcher.network,
+                state.settings(),
+                candidate,
+                &query,
+                &locale,
+            )
+            .await;
+            if !suggestions.is_empty() {
+                return suggestions;
+            }
+        }
+        Vec::new()
+    };
+    let suggestions = tokio::time::timeout(AUTOCOMPLETE_DEADLINE, lookup)
+        .await
+        .unwrap_or_default();
+    axum::Json(suggestions).into_response()
+}
+
+/// `GET /config`.
+pub async fn config(State(state): State<AppState>) -> Response {
+    let settings = state.settings();
+    let engines: Vec<serde_json::Value> = state
+        .searcher
+        .registry
+        .iter()
+        .map(|engine| {
+            serde_json::json!({
+                "name": engine.name(),
+                "categories": engine.categories(),
+                "shortcut": engine.shortcut(),
+                "enabled": true,
+                "paging": engine.paging(),
+                "language_support": engine.language_support(),
+                // the engine trait does not track per engine languages/regions
+                "languages": [],
+                "regions": [],
+                "safesearch": engine.safesearch_support(),
+                "time_range_support": engine.time_range_support(),
+                "timeout": engine.timeout().as_secs_f64(),
+            })
+        })
+        .collect();
+    let plugins: Vec<serde_json::Value> = state
+        .searcher
+        .plugins
+        .infos()
+        .into_iter()
+        .map(|plugin| {
+            let enabled = state.searcher.plugins.is_enabled(
+                &plugin.id,
+                &settings.plugins.enabled,
+                &settings.plugins.disabled,
+            );
+            serde_json::json!({ "name": plugin.id, "enabled": enabled })
+        })
+        .collect();
+    let locales: serde_json::Map<String, serde_json::Value> = crate::locales::LOCALES
+        .iter()
+        .map(|locale| {
+            let label = if locale.country.is_empty() {
+                format!("{} ({})", locale.native, locale.english)
+            } else {
+                format!("{} ({}, {})", locale.native, locale.english, locale.country)
+            };
+            (locale.id.to_string(), serde_json::Value::String(label))
+        })
+        .collect();
+    let brand = serde_json::json!({
+        "CONTACT_URL": settings.general.contact_url.clone(),
+        "DOCS_URL": "https://github.com/RustXNG/RustXNG/tree/main/docs",
+        "GIT_URL": "https://github.com/RustXNG/RustXNG",
+        "GIT_BRANCH": "main",
+        "ISSUE_URL": "https://github.com/RustXNG/RustXNG/issues",
+        "NEW_ISSUE_URL": "https://github.com/RustXNG/RustXNG/issues/new/choose",
+        "PRIVACYPOLICY_URL": settings.general.privacypolicy_url.clone(),
+        "DONATION_URL": settings.general.donation_url.clone(),
+    });
+    // upstream's /config is the contract used by clients; keep the field set
+    let body = serde_json::json!({
+        "version": crate::version::version_string(),
+        "instance_name": settings.general.instance_name,
+        "categories": state.searcher.registry.categories(),
+        "engines": engines,
+        "plugins": plugins,
+        "locales": locales,
+        "default_locale": settings.ui.default_locale,
+        "autocomplete": settings.search.autocomplete,
+        "safe_search": settings.search.safe_search,
+        "default_theme": settings.ui.default_theme,
+        "brand": brand,
+        "limiter": { "enabled": state.limiter.is_enabled() },
+        "doi_resolvers": [],
+        "default_doi_resolver": "",
+        "public_instance": settings.is_public_instance(),
+    });
+    axum::Json(body).into_response()
+}
+
+pub async fn preferences_get(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let settings = state.settings();
+    let preferences = preferences_of(&headers, &state);
+    let categories = category_views(&state.searcher, &preferences.categories);
+    let locales: Vec<(String, String)> = crate::locales::LOCALES
+        .iter()
+        .map(|locale| {
+            if locale.country.is_empty() {
+                (locale.id.to_string(), locale.english.to_string())
+            } else {
+                (
+                    locale.id.to_string(),
+                    format!("{} ({})", locale.english, locale.country),
+                )
+            }
+        })
+        .collect();
+    let disabled_engines = super::engine_list(&state.searcher, &preferences.disabled_engines);
+    let enabled_plugins = join_list(&preferences.enabled_plugins);
+    let disabled_plugins = join_list(&preferences.disabled_plugins);
+    let engines = super::engine_views_for(&state.searcher, &preferences.disabled_engines);
+    let plugins = super::plugin_views(
+        &state.searcher.plugins,
+        &preferences.enabled_plugins,
+        &preferences.disabled_plugins,
+    );
+    let languages = super::select_options(
+        std::iter::once((String::new(), String::new()))
+            .chain(
+                settings
+                    .search
+                    .languages
+                    .iter()
+                    .map(|language| (language.clone(), language.clone())),
+            )
+            .collect(),
+        &preferences.language,
+    );
+    let locales = super::select_options(
+        std::iter::once((String::new(), String::new()))
+            .chain(locales)
+            .collect(),
+        &preferences.locale,
+    );
+    let themes = super::select_options(
+        ["simple", "auto", "dark", "black"]
+            .iter()
+            .map(|theme| (theme.to_string(), theme.to_string()))
+            .collect(),
+        &preferences.theme,
+    );
+    let safesearch_options = super::select_options(
+        vec![
+            ("0".to_string(), "Off".to_string()),
+            ("1".to_string(), "Moderate".to_string()),
+            ("2".to_string(), "Strict".to_string()),
+        ],
+        &preferences.safesearch.to_string(),
+    );
+    let autocomplete_options = super::select_options(
+        vec![
+            ("none".to_string(), "Off".to_string()),
+            ("duckduckgo".to_string(), "DuckDuckGo".to_string()),
+            ("wikipedia".to_string(), "Wikipedia".to_string()),
+            ("mwmbl".to_string(), "Mwmbl".to_string()),
+        ],
+        &preferences.autocomplete,
+    );
+    let method_options = super::select_options(
+        vec![
+            ("POST".to_string(), "POST".to_string()),
+            ("GET".to_string(), "GET".to_string()),
+        ],
+        &preferences.method,
+    );
+    render(PreferencesTemplate {
+        instance_name: settings.general.instance_name.clone(),
+        version: VERSION.to_string(),
+        preferences,
+        categories,
+        engines,
+        plugins,
+        languages,
+        locales,
+        themes,
+        safesearch_options,
+        autocomplete_options,
+        method_options,
+        formats: settings.search.formats.clone(),
+        disabled_engines,
+        enabled_plugins,
+        disabled_plugins,
+    })
+}
+
+/// `POST /preferences`.
+pub async fn preferences_post(
+    State(state): State<AppState>,
+    _headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let settings = state.settings();
+    let form = parse_form(&String::from_utf8_lossy(&body));
+    let value = |key: &str| {
+        form.iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    let values = |key: &str| -> Vec<String> {
+        form.iter()
+            .filter(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+            .collect()
+    };
+
+    if value("action").as_deref() == Some("reset") {
+        let defaults = Preferences::from_settings(settings);
+        return with_cookies(
+            Redirect::to("/preferences").into_response(),
+            &defaults.to_cookies(),
+        );
+    }
+
+    let mut preferences = Preferences::from_settings(settings);
+    if let Some(language) = value("language") {
+        preferences.language = language;
+    }
+    if let Some(locale) = value("locale") {
+        preferences.locale = locale;
+    }
+    if let Some(safesearch) = value("safesearch").and_then(|value| value.parse::<u8>().ok()) {
+        preferences.safesearch = safesearch.min(2);
+    }
+    if let Some(theme) = value("theme") {
+        preferences.theme = theme;
+    }
+    if let Some(method) = value("method") {
+        preferences.method = method;
+    }
+    if let Some(autocomplete) = value("autocomplete") {
+        preferences.autocomplete = autocomplete;
+    }
+    if value("image_proxy").is_some() {
+        preferences.image_proxy = true;
+    } else if form.iter().any(|(name, _)| name == "image_proxy_off") {
+        preferences.image_proxy = false;
+    }
+    if let Some(max_page) = value("max_page").and_then(|value| value.parse::<u32>().ok()) {
+        preferences.max_page = max_page;
+    }
+    let categories = values("category");
+    if !categories.is_empty() {
+        preferences.categories = categories
+            .into_iter()
+            .flat_map(|value| split_list(&value))
+            .collect();
+    }
+
+    // Engines: the checked boxes are the enabled ones, the difference is stored.
+    let enabled_engines: Vec<String> = values("enabled_engine")
+        .into_iter()
+        .flat_map(|value| split_list(&value))
+        .collect();
+    if !enabled_engines.is_empty() {
+        preferences.disabled_engines = state
+            .searcher
+            .registry
+            .names()
+            .into_iter()
+            .filter(|name| !enabled_engines.contains(name))
+            .collect();
+    }
+
+    // Plugins: checked = enabled, everything else is disabled.
+    let selected_plugins: Vec<String> = values("enabled_plugin")
+        .into_iter()
+        .flat_map(|value| split_list(&value))
+        .collect();
+    if !selected_plugins.is_empty() {
+        preferences.disabled_plugins = state
+            .searcher
+            .plugins
+            .infos()
+            .into_iter()
+            .map(|info| info.id)
+            .filter(|id| !selected_plugins.contains(id))
+            .collect();
+        preferences.enabled_plugins = selected_plugins;
+    }
+
+    with_cookies(
+        Redirect::to("/preferences").into_response(),
+        &preferences.to_cookies(),
+    )
+}
+
+/// `GET /stats`.
+pub async fn stats(State(state): State<AppState>) -> Response {
+    let settings = state.settings();
+    let engines = state.searcher.engine_snapshots();
+    let limiter = state.limiter.stats();
+    tracing::debug!(
+        enabled = limiter.enabled,
+        allowed = limiter.allowed,
+        challenged = limiter.challenged,
+        blocked = limiter.blocked,
+        tracked = limiter.tracked,
+        "rate limiter state"
+    );
+    render(StatsTemplate {
+        instance_name: settings.general.instance_name.clone(),
+        version: VERSION.to_string(),
+        metrics: state.searcher.metrics.snapshot(),
+        cache: state.searcher.cache.stats(),
+        has_engines: !engines.is_empty(),
+        engines,
+    })
+}
+
+/// `GET /opensearch.xml`.
+pub async fn opensearch(State(state): State<AppState>) -> Response {
+    super::feeds::opensearch_response(&state)
+}
+
+/// `GET /stats/errors`.
+pub async fn stats_errors(State(state): State<AppState>) -> Response {
+    axum::Json(state.searcher.engine_snapshots()).into_response()
+}
+
+/// `GET /metrics`: OpenMetrics / Prometheus text, ported from
+/// `searx/openmetrics.py`. Disabled with `general.enable_metrics = false`.
+pub async fn metrics(State(state): State<AppState>) -> Response {
+    if !state.settings().general.enable_metrics {
+        return error_page(&state, StatusCode::NOT_FOUND, "metrics are disabled");
+    }
+    let body = prometheus_metrics(&state);
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/openmetrics-text; version=1.0.0; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response()
+}
+
+/// Render the metrics in the Prometheus exposition format. The engine metric
+/// names are the upstream ones (`searxng_engines_*`).
+fn prometheus_metrics(state: &AppState) -> String {
+    let readiness = crate::diagnostics::Readiness::evaluate(
+        state.settings(),
+        state.searcher.registry.len(),
+        Some(state.searcher.local_index.is_some() || state.searcher.wiki_index.is_some()),
+    );
+    render_prometheus(
+        &state.searcher.metrics.snapshot(),
+        &state.searcher.cache.stats(),
+        &readiness,
+        &state.limiter.stats(),
+        &state.searcher.engine_snapshots(),
+    )
+}
+
+/// Render the exposition from already-collected snapshots.
+///
+/// Keeping the formatting pure makes the byte-level compatibility of the
+/// existing series testable without a running server.
+fn render_prometheus(
+    metrics: &crate::metrics::MetricsSnapshot,
+    cache: &crate::cache::CacheStats,
+    readiness: &crate::diagnostics::Readiness,
+    limiter: &super::limiter::LimiterStats,
+    engines: &[crate::engine::state::EngineSnapshot],
+) -> String {
+    let mut out = String::new();
+    let counter = |name: &str, help: &str, out: &mut String| {
+        out.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n"));
+    };
+    let gauge = |name: &str, help: &str, out: &mut String| {
+        out.push_str(&format!("# HELP {name} {help}\n# TYPE {name} gauge\n"));
+    };
+    counter(
+        "searxng_search_requests_total",
+        "Number of searches served",
+        &mut out,
+    );
+    out.push_str(&format!(
+        "searxng_search_requests_total {}\n",
+        metrics.searches
+    ));
+    counter(
+        "searxng_search_results_total",
+        "Number of results returned to clients",
+        &mut out,
+    );
+    out.push_str(&format!(
+        "searxng_search_results_total {}\n",
+        metrics.results
+    ));
+    out.push_str(
+        "# HELP searxng_uptime_seconds Process uptime\n# TYPE searxng_uptime_seconds gauge\n",
+    );
+    out.push_str(&format!("searxng_uptime_seconds {:.3}\n", metrics.uptime));
+    out.push_str("# HELP searxng_search_duration_seconds_sum Total time spent inside searches\n# TYPE searxng_search_duration_seconds_sum counter\n");
+    out.push_str(&format!(
+        "searxng_search_duration_seconds_sum {:.6}\n",
+        metrics.search_duration_micros as f64 / 1_000_000.0
+    ));
+    out.push_str("# HELP searxng_search_duration_seconds_count Searches that contributed to the sum\n# TYPE searxng_search_duration_seconds_count counter\n");
+    out.push_str(&format!(
+        "searxng_search_duration_seconds_count {}\n",
+        metrics.search_duration_count
+    ));
+    counter("searxng_cache_hit_total", "Number of cache hits", &mut out);
+    out.push_str(&format!("searxng_cache_hit_total {}\n", cache.hit));
+    counter(
+        "searxng_cache_miss_total",
+        "Number of cache misses",
+        &mut out,
+    );
+    out.push_str(&format!("searxng_cache_miss_total {}\n", cache.miss));
+    out.push_str(
+        "# HELP searxng_cache_entries Cached responses\n# TYPE searxng_cache_entries gauge\n",
+    );
+    out.push_str(&format!("searxng_cache_entries {}\n", cache.entries));
+    counter(
+        "searxng_cache_error_total",
+        "Cache backend errors (decode or transport)",
+        &mut out,
+    );
+    out.push_str(&format!("searxng_cache_error_total {}\n", cache.error));
+    gauge(
+        "searxng_cache_bytes",
+        "Bytes held by the in-memory cache",
+        &mut out,
+    );
+    out.push_str(&format!("searxng_cache_bytes {}\n", cache.bytes));
+
+    // Readiness is the same evaluation `/readyz` and `--check-config` use, so
+    // an alert and a health probe cannot disagree about what "ready" means.
+    gauge(
+        "searxng_ready",
+        "1 when a search source (engine or local index) is configured",
+        &mut out,
+    );
+    out.push_str(&format!("searxng_ready {}\n", u8::from(readiness.ready)));
+    gauge(
+        "searxng_engines_configured",
+        "Engines built from the configuration",
+        &mut out,
+    );
+    out.push_str(&format!(
+        "searxng_engines_configured {}\n",
+        readiness.engines
+    ));
+    gauge(
+        "searxng_local_index",
+        "1 when a configured local index exists on disk",
+        &mut out,
+    );
+    out.push_str(&format!(
+        "searxng_local_index {}\n",
+        u8::from(readiness.local_index)
+    ));
+
+    out.push_str("# HELP searxng_limiter_requests_total Requests seen by the limiter, by verdict\n# TYPE searxng_limiter_requests_total counter\n");
+    out.push_str(&format!(
+        "searxng_limiter_requests_total{{verdict=\"allowed\"}} {}\n",
+        limiter.allowed
+    ));
+    out.push_str(&format!(
+        "searxng_limiter_requests_total{{verdict=\"challenged\"}} {}\n",
+        limiter.challenged
+    ));
+    out.push_str(&format!(
+        "searxng_limiter_requests_total{{verdict=\"blocked\"}} {}\n",
+        limiter.blocked
+    ));
+    gauge(
+        "searxng_limiter_tracked",
+        "Clients currently tracked by the limiter",
+        &mut out,
+    );
+    out.push_str(&format!("searxng_limiter_tracked {}\n", limiter.tracked));
+
+    out.push_str("# HELP searxng_http_responses_total HTTP responses by status class\n# TYPE searxng_http_responses_total counter\n");
+    for (class, value) in [
+        ("2xx", metrics.response_2xx),
+        ("3xx", metrics.response_3xx),
+        ("4xx", metrics.response_4xx),
+        ("5xx", metrics.response_5xx),
+    ] {
+        out.push_str(&format!(
+            "searxng_http_responses_total{{status=\"{class}\"}} {value}\n"
+        ));
+    }
+
+    out.push_str("# HELP searxng_engines_request_count_total Requests sent to an engine\n# TYPE searxng_engines_request_count_total counter\n");
+    out.push_str("# HELP searxng_engines_result_count_total Results returned by an engine\n# TYPE searxng_engines_result_count_total counter\n");
+    out.push_str("# HELP searxng_engines_error_count_total Errors reported by an engine\n# TYPE searxng_engines_error_count_total counter\n");
+    out.push_str("# HELP searxng_engines_response_time_total_seconds Time spent waiting for an engine\n# TYPE searxng_engines_response_time_total_seconds counter\n");
+    out.push_str("# HELP searxng_engines_reliability_total Share of successful requests\n# TYPE searxng_engines_reliability_total gauge\n");
+    out.push_str("# HELP searxng_engines_suspended Whether the engine is currently suspended\n# TYPE searxng_engines_suspended gauge\n");
+    out.push_str("# HELP searxng_engines_resting Whether the engine is resting due to repeated empty results\n# TYPE searxng_engines_resting gauge\n");
+    out.push_str("# HELP searxng_engines_resting_seconds Remaining rest time in seconds\n# TYPE searxng_engines_resting_seconds gauge\n");
+    for engine in engines {
+        let label = engine.engine.replace('"', "");
+        let reliability = if engine.stats.requests == 0 {
+            0.0
+        } else {
+            1.0 - (engine.stats.errors as f64 / engine.stats.requests as f64)
+        };
+        out.push_str(&format!(
+            "searxng_engines_request_count_total{{engine=\"{label}\"}} {}\n",
+            engine.stats.requests
+        ));
+        out.push_str(&format!(
+            "searxng_engines_result_count_total{{engine=\"{label}\"}} {}\n",
+            engine.stats.results
+        ));
+        out.push_str(&format!(
+            "searxng_engines_error_count_total{{engine=\"{label}\"}} {}\n",
+            engine.stats.errors
+        ));
+        out.push_str(&format!(
+            "searxng_engines_response_time_total_seconds{{engine=\"{label}\"}} {:.6}\n",
+            engine.stats.total_time
+        ));
+        out.push_str(&format!(
+            "searxng_engines_reliability_total{{engine=\"{label}\"}} {reliability:.6}\n"
+        ));
+        out.push_str(&format!(
+            "searxng_engines_suspended{{engine=\"{label}\"}} {}\n",
+            if engine.suspended { 1 } else { 0 }
+        ));
+        out.push_str(&format!(
+            "searxng_engines_resting{{engine=\"{label}\"}} {}\n",
+            if engine.resting { 1 } else { 0 }
+        ));
+        out.push_str(&format!(
+            "searxng_engines_resting_seconds{{engine=\"{label}\"}} {:.3}\n",
+            engine.resting_for
+        ));
+    }
+
+    // Engine health: the circuit breaker and the suspension ladder. These
+    // are appended after the established series so the existing exposition
+    // keeps its exact bytes and order. The labels stay bounded by the
+    // configured engines, with at most three state series per engine.
+    out.push_str("# HELP searxng_engines_circuit_state Circuit breaker phase; 1 for the phase named by the state label\n# TYPE searxng_engines_circuit_state gauge\n");
+    out.push_str("# HELP searxng_engines_circuit_failure_ratio Failure share of the circuit rolling window\n# TYPE searxng_engines_circuit_failure_ratio gauge\n");
+    out.push_str("# HELP searxng_engines_circuit_samples Outcomes currently in the circuit rolling window\n# TYPE searxng_engines_circuit_samples gauge\n");
+    out.push_str("# HELP searxng_engines_circuit_open_seconds Seconds until the open circuit allows a trial\n# TYPE searxng_engines_circuit_open_seconds gauge\n");
+    out.push_str("# HELP searxng_engines_suspended_seconds Remaining suspension time in seconds\n# TYPE searxng_engines_suspended_seconds gauge\n");
+    out.push_str("# HELP searxng_engines_consecutive_failures Consecutive failures since the last success\n# TYPE searxng_engines_consecutive_failures gauge\n");
+    for engine in engines {
+        let label = engine.engine.replace('"', "");
+        for state in [
+            crate::engine::state::CircuitState::Closed,
+            crate::engine::state::CircuitState::HalfOpen,
+            crate::engine::state::CircuitState::Open,
+        ] {
+            out.push_str(&format!(
+                "searxng_engines_circuit_state{{engine=\"{label}\",state=\"{}\"}} {}\n",
+                state.as_str(),
+                u8::from(engine.circuit == state)
+            ));
+        }
+        out.push_str(&format!(
+            "searxng_engines_circuit_failure_ratio{{engine=\"{label}\"}} {:.6}\n",
+            engine.circuit_failure_ratio
+        ));
+        out.push_str(&format!(
+            "searxng_engines_circuit_samples{{engine=\"{label}\"}} {}\n",
+            engine.circuit_samples
+        ));
+        out.push_str(&format!(
+            "searxng_engines_circuit_open_seconds{{engine=\"{label}\"}} {:.3}\n",
+            engine.circuit_open_for
+        ));
+        out.push_str(&format!(
+            "searxng_engines_suspended_seconds{{engine=\"{label}\"}} {:.3}\n",
+            engine.suspended_for
+        ));
+        out.push_str(&format!(
+            "searxng_engines_consecutive_failures{{engine=\"{label}\"}} {}\n",
+            engine.consecutive_failures
+        ));
+    }
+    out.push_str("# EOF\n");
+    out
+}
+
+/// `GET /healthz`.
+/// Query parameters of `/research`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ResearchParams {
+    pub q: Option<String>,
+    pub max_queries: Option<usize>,
+    pub max_sources: Option<usize>,
+}
+
+/// `GET /research` — deep research: plan sub-queries, search, fetch pages and
+/// (when an LLM is configured) synthesise a cited markdown report.
+pub async fn research(
+    State(state): State<AppState>,
+    Query(params): Query<ResearchParams>,
+    peer: ClientAddr,
+    headers: HeaderMap,
+) -> Response {
+    let question = params.q.clone().unwrap_or_default();
+    if question.trim().is_empty() {
+        return format_error(&state, "json", StatusCode::BAD_REQUEST, "missing question");
+    }
+    if let Some(response) = limiter_response(
+        &state,
+        "json",
+        state.limiter.check(peer.0, &headers, "json"),
+    ) {
+        return response;
+    }
+    let settings = state.settings();
+    let max_queries = params
+        .max_queries
+        .unwrap_or(settings.research.max_queries)
+        .clamp(1, 10);
+    let max_sources = params
+        .max_sources
+        .unwrap_or(settings.research.max_sources)
+        .clamp(1, 50);
+    // Sub-queries and page fetches run one after another, so the endpoint needs
+    // its own deadline and a bound on concurrent work: without them one caller
+    // can hold the worker and amplify outbound requests.
+    let Ok(_slot) = state.research_slots.clone().try_acquire_owned() else {
+        return format_error(
+            &state,
+            "json",
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many concurrent research requests; retry later",
+        );
+    };
+    let deadline = std::time::Duration::from_secs(settings.research.deadline.max(1));
+    let report = match tokio::time::timeout(
+        deadline,
+        state.searcher.research(&question, max_queries, max_sources),
+    )
+    .await
+    {
+        Ok(report) => report,
+        Err(_) => {
+            return format_error(
+                &state,
+                "json",
+                StatusCode::GATEWAY_TIMEOUT,
+                &format!(
+                    "research did not finish within {}s; reduce max_queries or max_sources",
+                    deadline.as_secs()
+                ),
+            );
+        }
+    };
+    axum::Json(report).into_response()
+}
+
+pub async fn healthz() -> Response {
+    (StatusCode::OK, "OK").into_response()
+}
+
+/// `GET /readyz` — can this instance return search results at all?
+///
+/// `/healthz` only proves that the process answers. This endpoint reports the
+/// configured sources: a profile without a usable engine and without a local
+/// index can serve pages but cannot search. It never contacts a provider, so a
+/// 200 means "nothing local is missing", not "every provider is reachable".
+pub async fn readyz(State(state): State<AppState>) -> Response {
+    // The CLI (`--check-config`) evaluates the same structure, so the endpoint
+    // and the startup check cannot disagree about what "ready" means.
+    let readiness = crate::diagnostics::Readiness::evaluate(
+        state.settings(),
+        state.searcher.registry.len(),
+        Some(state.searcher.local_index.is_some() || state.searcher.wiki_index.is_some()),
+    );
+    let status = if readiness.ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (status, axum::Json(readiness)).into_response()
+}
+
+/// `GET /about`.
+pub async fn about(State(state): State<AppState>) -> Response {
+    let settings = state.settings();
+    render(AboutTemplate {
+        instance_name: settings.general.instance_name.clone(),
+        version: VERSION.to_string(),
+        base_url: state.base_url(),
+        engine_count: state.searcher.registry.len(),
+        engines: engine_views(&state.searcher),
+        plugins: super::plugin_views(
+            &state.searcher.plugins,
+            &state.settings().plugins.enabled,
+            &state.settings().plugins.disabled,
+        ),
+        settings_path: crate::settings::Settings::path_from_env()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+    })
+}
+
+/// `GET /robots.txt`.
+pub async fn robots() -> Response {
+    let body = "User-agent: *\nDisallow: /stats\nDisallow: /preferences\nDisallow: /config\nDisallow: /metrics\n";
+    ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], body).into_response()
+}
+
+/// Serve a file that is compiled into the binary.
+fn static_file(bytes: &'static [u8], content_type: &'static str) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+/// `GET /favicon.ico`.
+pub async fn favicon() -> Response {
+    static_file(include_bytes!("../../static/favicon.ico"), "image/x-icon")
+}
+
+/// `GET /static/logo.png` — the square mark.
+pub async fn logo() -> Response {
+    static_file(include_bytes!("../../static/logo.png"), "image/png")
+}
+
+/// `GET /static/logo-wordmark.png` — the wordmark for light backgrounds.
+pub async fn wordmark() -> Response {
+    static_file(
+        include_bytes!("../../static/logo-wordmark.png"),
+        "image/png",
+    )
+}
+
+/// `GET /static/logo-wordmark-light.png` — the wordmark for dark backgrounds.
+pub async fn wordmark_light() -> Response {
+    static_file(
+        include_bytes!("../../static/logo-wordmark-light.png"),
+        "image/png",
+    )
+}
+
+/// `GET /static/style.css`.
+pub async fn style() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        include_str!("../../static/style.css"),
+    )
+        .into_response()
+}
+
+/// The fallback route.
+pub async fn not_found(State(state): State<AppState>) -> Response {
+    error_page(&state, StatusCode::NOT_FOUND, "page not found")
+}
+
+/// Render a rejected request's limiter response.
+pub(super) fn limiter_response(
+    state: &AppState,
+    format: &str,
+    verdict: LimiterVerdict,
+) -> Option<Response> {
+    let (retry_after, message, set_cookie) = match verdict {
+        LimiterVerdict::Allow => return None,
+        LimiterVerdict::Blocked {
+            retry_after,
+            message,
+        } => (retry_after, message, None),
+        LimiterVerdict::Challenge {
+            retry_after,
+            message,
+            set_cookie,
+        } => (retry_after, message, Some(set_cookie)),
+        LimiterVerdict::Redirect => return Some(Redirect::to("/").into_response()),
+    };
+    let mut response = format_error(state, format, StatusCode::TOO_MANY_REQUESTS, &message);
+    if retry_after > 0
+        && let Ok(value) = axum::http::HeaderValue::from_str(&retry_after.to_string())
+    {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    if let Some(cookie) = set_cookie
+        && let Ok(value) = axum::http::HeaderValue::from_str(&cookie)
+    {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    Some(response)
+}
+
+/// Render a rejected request in the format the caller asked for.
+///
+/// A JSON client cannot read an HTML error page, so the reason has to travel
+/// in the body contract the request selected. HTML stays the default.
+fn format_error(state: &AppState, format: &str, status: StatusCode, message: &str) -> Response {
+    match format {
+        "json" => (status, axum::Json(serde_json::json!({ "error": message }))).into_response(),
+        "csv" | "rss" | "plain" => (
+            status,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            message.to_string(),
+        )
+            .into_response(),
+        _ => error_page(state, status, message),
+    }
+}
+
+fn error_page(state: &AppState, status: StatusCode, message: &str) -> Response {
+    let body = ErrorTemplate {
+        instance_name: state.settings().general.instance_name.clone(),
+        version: VERSION.to_string(),
+        status: status.as_u16(),
+        message: message.to_string(),
+    };
+    (status, render(body)).into_response()
+}
+
+fn preferences_of(headers: &HeaderMap, state: &AppState) -> Preferences {
+    Preferences::from_cookies(
+        headers
+            .get(header::COOKIE)
+            .and_then(|value| value.to_str().ok()),
+        state.settings(),
+    )
+}
+
+fn user_info(state: &AppState, peer: &ClientAddr, headers: &HeaderMap) -> UserInfo {
+    // Forwarded headers are only honoured from configured proxies, exactly
+    // as the rate limiter decides; a plugin must not show a spoofed address.
+    let ip = state.limiter.real_ip(peer.0, headers).to_string();
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    UserInfo {
+        ip,
+        user_agent,
+        headers: Default::default(),
+    }
+}
+
+fn split_param(value: Option<&str>) -> Option<Vec<String>> {
+    value
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<String>>()
+        })
+        .filter(|values: &Vec<String>| !values.is_empty())
+}
+
+/// Parse an `application/x-www-form-urlencoded` body, keeping repeated keys.
+pub fn parse_form(body: &str) -> Vec<(String, String)> {
+    body.split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let name = decode_form(parts.next().unwrap_or_default());
+            let value = decode_form(parts.next().unwrap_or_default());
+            (name, value)
+        })
+        .collect()
+}
+
+fn decode_form(value: &str) -> String {
+    percent_encoding::percent_decode_str(&value.replace('+', " "))
+        .decode_utf8_lossy()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aggregator::Searcher;
+    use crate::settings::Settings;
+
+    #[test]
+    fn a_blocked_limiter_verdict_is_a_429_with_retry_after() {
+        let state = AppState::new(Searcher::new(Settings::defaults()).expect("searcher"));
+        let response = limiter_response(
+            &state,
+            "json",
+            LimiterVerdict::Blocked {
+                retry_after: 42,
+                message: "too many requests in API_WINDOW (4)".into(),
+            },
+        )
+        .expect("a blocked verdict renders a response");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            Some("42")
+        );
+    }
+
+    #[test]
+    fn form_bodies_keep_repeated_keys() {
+        let form = parse_form("action=save&category=general&category=images&q=a+b%26c");
+        assert_eq!(
+            form,
+            vec![
+                ("action".to_string(), "save".to_string()),
+                ("category".to_string(), "general".to_string()),
+                ("category".to_string(), "images".to_string()),
+                ("q".to_string(), "a b&c".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn comma_separated_parameters_are_split() {
+        assert_eq!(
+            split_param(Some("general, images")),
+            Some(vec!["general".to_string(), "images".to_string()])
+        );
+        assert_eq!(split_param(Some("")), None);
+        assert_eq!(split_param(None), None);
+    }
+
+    /// Fixed inputs for the exposition tests: no wall clock and one engine
+    /// whose circuit is open, so every series has a value.
+    fn exposition_fixture() -> (
+        crate::metrics::MetricsSnapshot,
+        crate::cache::CacheStats,
+        crate::diagnostics::Readiness,
+        crate::web::limiter::LimiterStats,
+        Vec<crate::engine::state::EngineSnapshot>,
+    ) {
+        let metrics = crate::metrics::MetricsSnapshot {
+            uptime: 12.5,
+            searches: 7,
+            engine_requests: 21,
+            engine_errors: 2,
+            engine_timeouts: 1,
+            results: 40,
+            cache_hits: 3,
+            response_2xx: 5,
+            response_3xx: 0,
+            response_4xx: 1,
+            response_5xx: 0,
+            search_duration_micros: 2_500_000,
+            search_duration_count: 7,
+        };
+        let cache = crate::cache::CacheStats {
+            hit: 3,
+            miss: 4,
+            entries: 2,
+            bytes: 1024,
+            error: 1,
+        };
+        let readiness = crate::diagnostics::Readiness {
+            ready: true,
+            engines: 1,
+            local_index: false,
+            reasons: Vec::new(),
+        };
+        let limiter = crate::web::limiter::LimiterStats {
+            enabled: true,
+            allowed: 9,
+            challenged: 1,
+            blocked: 0,
+            tracked: 2,
+        };
+        let engines = vec![crate::engine::state::EngineSnapshot {
+            engine: "example".to_string(),
+            stats: crate::engine::state::EngineStats {
+                requests: 10,
+                results: 20,
+                errors: 2,
+                timeouts: 1,
+                http_errors: 1,
+                total_time: 1.5,
+            },
+            consecutive_failures: 2,
+            suspended: true,
+            suspended_for: 60.0,
+            suspension_reason: Some("timeout".to_string()),
+            resting: false,
+            resting_for: 0.0,
+            circuit: crate::engine::state::CircuitState::Open,
+            circuit_open_for: 17.25,
+            circuit_failure_ratio: 0.75,
+            circuit_samples: 8,
+        }];
+        (metrics, cache, readiness, limiter, engines)
+    }
+
+    /// Series added with the engine-health block. Stripping them leaves
+    /// exactly the exposition the endpoint produced before that block.
+    const ADDED_SERIES: [&str; 6] = [
+        "searxng_engines_circuit_state",
+        "searxng_engines_circuit_failure_ratio",
+        "searxng_engines_circuit_samples",
+        "searxng_engines_circuit_open_seconds",
+        "searxng_engines_suspended_seconds",
+        "searxng_engines_consecutive_failures",
+    ];
+
+    fn existing_series(exposition: &str) -> String {
+        let mut kept = String::new();
+        for line in exposition.lines() {
+            let name = line
+                .strip_prefix("# HELP ")
+                .or_else(|| line.strip_prefix("# TYPE "))
+                .and_then(|rest| rest.split(' ').next())
+                .or_else(|| line.split(['{', ' ']).next());
+            if !name.is_some_and(|name| ADDED_SERIES.contains(&name)) {
+                kept.push_str(line);
+                kept.push('\n');
+            }
+        }
+        kept
+    }
+
+    /// The exposition the endpoint produced before the engine-health block,
+    /// byte for byte. The test below strips the added series first, so a new
+    /// line is allowed but any change to an existing line is not.
+    const EXISTING_EXPOSITION: &str = r#"# HELP searxng_search_requests_total Number of searches served
+# TYPE searxng_search_requests_total counter
+searxng_search_requests_total 7
+# HELP searxng_search_results_total Number of results returned to clients
+# TYPE searxng_search_results_total counter
+searxng_search_results_total 40
+# HELP searxng_uptime_seconds Process uptime
+# TYPE searxng_uptime_seconds gauge
+searxng_uptime_seconds 12.500
+# HELP searxng_search_duration_seconds_sum Total time spent inside searches
+# TYPE searxng_search_duration_seconds_sum counter
+searxng_search_duration_seconds_sum 2.500000
+# HELP searxng_search_duration_seconds_count Searches that contributed to the sum
+# TYPE searxng_search_duration_seconds_count counter
+searxng_search_duration_seconds_count 7
+# HELP searxng_cache_hit_total Number of cache hits
+# TYPE searxng_cache_hit_total counter
+searxng_cache_hit_total 3
+# HELP searxng_cache_miss_total Number of cache misses
+# TYPE searxng_cache_miss_total counter
+searxng_cache_miss_total 4
+# HELP searxng_cache_entries Cached responses
+# TYPE searxng_cache_entries gauge
+searxng_cache_entries 2
+# HELP searxng_cache_error_total Cache backend errors (decode or transport)
+# TYPE searxng_cache_error_total counter
+searxng_cache_error_total 1
+# HELP searxng_cache_bytes Bytes held by the in-memory cache
+# TYPE searxng_cache_bytes gauge
+searxng_cache_bytes 1024
+# HELP searxng_ready 1 when a search source (engine or local index) is configured
+# TYPE searxng_ready gauge
+searxng_ready 1
+# HELP searxng_engines_configured Engines built from the configuration
+# TYPE searxng_engines_configured gauge
+searxng_engines_configured 1
+# HELP searxng_local_index 1 when a configured local index exists on disk
+# TYPE searxng_local_index gauge
+searxng_local_index 0
+# HELP searxng_limiter_requests_total Requests seen by the limiter, by verdict
+# TYPE searxng_limiter_requests_total counter
+searxng_limiter_requests_total{verdict="allowed"} 9
+searxng_limiter_requests_total{verdict="challenged"} 1
+searxng_limiter_requests_total{verdict="blocked"} 0
+# HELP searxng_limiter_tracked Clients currently tracked by the limiter
+# TYPE searxng_limiter_tracked gauge
+searxng_limiter_tracked 2
+# HELP searxng_http_responses_total HTTP responses by status class
+# TYPE searxng_http_responses_total counter
+searxng_http_responses_total{status="2xx"} 5
+searxng_http_responses_total{status="3xx"} 0
+searxng_http_responses_total{status="4xx"} 1
+searxng_http_responses_total{status="5xx"} 0
+# HELP searxng_engines_request_count_total Requests sent to an engine
+# TYPE searxng_engines_request_count_total counter
+# HELP searxng_engines_result_count_total Results returned by an engine
+# TYPE searxng_engines_result_count_total counter
+# HELP searxng_engines_error_count_total Errors reported by an engine
+# TYPE searxng_engines_error_count_total counter
+# HELP searxng_engines_response_time_total_seconds Time spent waiting for an engine
+# TYPE searxng_engines_response_time_total_seconds counter
+# HELP searxng_engines_reliability_total Share of successful requests
+# TYPE searxng_engines_reliability_total gauge
+# HELP searxng_engines_suspended Whether the engine is currently suspended
+# TYPE searxng_engines_suspended gauge
+# HELP searxng_engines_resting Whether the engine is resting due to repeated empty results
+# TYPE searxng_engines_resting gauge
+# HELP searxng_engines_resting_seconds Remaining rest time in seconds
+# TYPE searxng_engines_resting_seconds gauge
+searxng_engines_request_count_total{engine="example"} 10
+searxng_engines_result_count_total{engine="example"} 20
+searxng_engines_error_count_total{engine="example"} 2
+searxng_engines_response_time_total_seconds{engine="example"} 1.500000
+searxng_engines_reliability_total{engine="example"} 0.800000
+searxng_engines_suspended{engine="example"} 1
+searxng_engines_resting{engine="example"} 0
+searxng_engines_resting_seconds{engine="example"} 0.000
+# EOF
+"#;
+
+    #[test]
+    fn the_existing_exposition_is_byte_for_byte_unchanged() {
+        let (metrics, cache, readiness, limiter, engines) = exposition_fixture();
+        let rendered = render_prometheus(&metrics, &cache, &readiness, &limiter, &engines);
+        assert_eq!(existing_series(&rendered), EXISTING_EXPOSITION);
+    }
+
+    #[test]
+    fn engine_health_gauges_report_the_circuit_and_suspension() {
+        let (metrics, cache, readiness, limiter, engines) = exposition_fixture();
+        let rendered = render_prometheus(&metrics, &cache, &readiness, &limiter, &engines);
+        for (state, value) in [("closed", 0), ("half-open", 0), ("open", 1)] {
+            assert!(
+                rendered.contains(&format!(
+                    "searxng_engines_circuit_state{{engine=\"example\",state=\"{state}\"}} {value}\n"
+                )),
+                "the {state} phase is exported:\n{rendered}"
+            );
+        }
+        assert!(
+            rendered
+                .contains("searxng_engines_circuit_failure_ratio{engine=\"example\"} 0.750000\n")
+        );
+        assert!(rendered.contains("searxng_engines_circuit_samples{engine=\"example\"} 8\n"));
+        assert!(
+            rendered.contains("searxng_engines_circuit_open_seconds{engine=\"example\"} 17.250\n")
+        );
+        assert!(
+            rendered.contains("searxng_engines_suspended_seconds{engine=\"example\"} 60.000\n")
+        );
+        assert!(rendered.contains("searxng_engines_consecutive_failures{engine=\"example\"} 2\n"));
+    }
+}

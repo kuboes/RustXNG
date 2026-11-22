@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Why does my lease keep expiring? — Example Forum</title></head>
+<body>
+<header role="banner">Example Forum</header>
+<nav aria-label="Forum"><a href="/">Categories</a><a href="/latest">Latest</a><a href="/search">Search</a></nav>
+<main>
+<article>
+<h1>Why does my lease keep expiring?</h1>
+<div>
+<h2>op — 17 Nov 2026</h2>
+<p>I set the lease to ten seconds and the shard comes back every time a large page is parsed. The parse takes longer than ten seconds but the worker is clearly alive.</p>
+<footer><a href="#reply1">Reply</a> · <a href="#like1">Like</a></footer>
+</div>
+<div>
+<h2>helper — 17 Nov 2026</h2>
+<blockquote><p>I set the lease to ten seconds and the shard comes back every time a large page is parsed.</p></blockquote>
+<p>The lease measures time without a renewal, not time without progress. Renew on a timer inside the worker, not after the parse finishes.</p>
+<pre><code>renewal:
+  every: 3
+  grace: 2
+</code></pre>
+<footer><a href="#reply2">Reply</a></footer>
+</div>
+<div>
+<h2>op — 18 Nov 2026</h2>
+<p>Renewing on a timer fixed it. The queue depth is flat now even on the slow host.</p>
+<footer><a href="#reply3">Reply</a></footer>
+</div>
+</article>
+</main>
+<footer role="contentinfo">Example Forum · Terms · Privacy</footer>
+</body>
+</html>

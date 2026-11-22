@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Lease-based shard claiming for cooperative crawlers</title></head>
+<body>
+<nav role="navigation"><a href="/">Proceedings</a><a href="/search">Search</a></nav>
+<main>
+<article>
+<h1>Lease-based shard claiming for cooperative crawlers</h1>
+<p>A. Researcher, B. Coauthor</p>
+<p>Keywords: crawlers, leases, work stealing</p>
+<h2>Abstract</h2>
+<p>We describe a shard queue that hands out time-bounded leases instead of fixed partitions. The design removes the hot counter that limits naive work stealing, and it recovers from worker failure without a central coordinator.</p>
+<h2>1. Introduction</h2>
+<p>Partitioned crawlers assign each worker a fixed range of uniform resource locators before the run starts. When one host is slower than the rest, the range becomes a straggler and the whole run waits for it<sup><a href="#ref1" id="cit1">[1]</a></sup>.</p>
+<h2>2. Method</h2>
+<p>A worker claims a shard by writing an expiring lease into the queue, then renews the lease while it makes progress. A dead worker stops renewing, and the shard returns to the queue after the lease expires.</p>
+<h2>3. Results</h2>
+<p>Across 40 runs the queue depth never exceeded twice the pool size, and the tail of the run was 31 percent shorter than a fixed partition of the same shards<sup><a href="#ref2" id="cit2">[2]</a></sup>.</p>
+<h2>References</h2>
+<ol>
+<li id="ref1">R. Author. Partitioned fetch scheduling. Journal of Example Systems, 2024.</li>
+<li id="ref2">S. Writer. Work stealing revisited. Proceedings of ExampleConf, 2025.</li>
+</ol>
+</article>
+</main>
+<footer role="contentinfo">Published by the Example Society. Citation formats available on request.</footer>
+</body>
+</html>

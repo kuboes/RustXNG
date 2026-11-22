@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Measured hold times</title></head>
+<body>
+<nav aria-label="Data"><a href="/data">Data</a></nav>
+<main>
+<article>
+<h1>Measured hold times</h1>
+<p>The raw records are four columns wide: worker, shard, hold time in milliseconds, and whether the lease was renewed.</p>
+<pre><code>worker,shard,hold_ms,renewed
+w1,s17,412,true
+w1,s18,398,true
+w2,s19,1204,false
+w2,s20,1103,true
+</code></pre>
+<p>The same records as a table, with the header row written as plain cells so that the file stays valid for a simple parser.</p>
+<table>
+<tr><td>worker</td><td>shard</td><td>hold_ms</td><td>renewed</td></tr>
+<tr><td>w1</td><td>s17</td><td>412</td><td>true</td></tr>
+<tr><td>w2</td><td>s19</td><td>1204</td><td>false</td></tr>
+</table>
+<p>Only one record in the sample missed its renewal, and it is also the slowest one.</p>
+</article>
+</main>
+<footer role="contentinfo">Example Data Notes</footer>
+</body>
+</html>

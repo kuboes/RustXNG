@@ -1,0 +1,46 @@
+# Dependency policy: kept small on purpose (see docs/DEPENDENCY-SECURITY-2026-11-03.md).
+
+[graph]
+targets = []
+
+[advisories]
+version = 2
+# chrono is declared as a non-optional dependency by rmcp 3.x (every released
+# version) and by schemars 1.x, so it cannot be removed from this crate's tree.
+# The advisory records unmaintained status only: no vulnerability, unsoundness
+# or memory-safety finding. Tracked in .github/security-baseline.json with an
+# expiry and an exit condition; every other advisory still fails.
+ignore = [
+    "RUSTSEC-2026-0543",
+]
+
+[licenses]
+version = 2
+# The set the project ships today (see NOTICE). MPL-2.0 covers four
+# file-level-copyleft crates pulled in by scraper.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "AGPL-3.0-or-later",
+    "CDLA-Permissive-2.0",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are common in the ecosystem; record them, do not fail.
+multiple-versions = "warn"
+# A wildcard version would let a crate update itself silently.
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

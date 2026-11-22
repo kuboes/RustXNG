@@ -1,0 +1,7 @@
+target
+corpus
+artifacts
+coverage
+# Regenerated from fuzz/Cargo.toml on the first build; the product lock file
+# does not describe these harness-only dependencies.
+Cargo.lock

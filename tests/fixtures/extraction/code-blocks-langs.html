@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Four ways to parse the same line</title></head>
+<body>
+<nav role="navigation"><a href="/languages">Languages</a></nav>
+<main>
+<article>
+<h1>Four ways to parse the same line</h1>
+<p>The same one-line record is parsed in four languages. The interesting part is how each one reports a malformed field.</p>
+<h2>Python</h2>
+<pre><code>def parse(line):
+    name, value = line.split("=", 1)
+    return name.strip(), int(value)
+</code></pre>
+<h2>Rust</h2>
+<pre><code>fn parse(line: &amp;str) -&gt; Option&lt;(&amp;str, i64)&gt; {
+    let (name, value) = line.split_once('=')?;
+    Some((name.trim(), value.trim().parse().ok()?))
+}
+</code></pre>
+<h2>Shell</h2>
+<pre><code>while IFS='=' read -r name value; do
+  printf '%s -> %s\n' "$name" "$value"
+done &lt; records.txt
+</code></pre>
+<h2>Diff</h2>
+<pre><code>-old_name = value
++new_name = value
+</code></pre>
+<p>Each version keeps the trailing space out of the parsed value, which is the one rule the four implementations share.</p>
+</article>
+</main>
+<footer role="contentinfo">Example Languages Blog</footer>
+</body>
+</html>

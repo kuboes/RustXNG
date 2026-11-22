@@ -1,0 +1,27 @@
+# RustXNG "clean" profile: no external search at all.
+#
+#   rustxng --profile clean         (built into the binary)
+#
+# The only sources are our own indexes, and both are built ahead of time:
+#   - the crawl index (robots.txt-compliant, built with `rustxng-index crawl`)
+#   - the Wikipedia dump index (built from the official dump)
+# At runtime this profile reaches no search provider and works offline.
+# Build the indexes first (docs/LOCAL-INDEX.md, docs/WIKIPEDIA-INDEX.md); a
+# missing directory simply contributes nothing.
+#
+# "Clean" says nothing about the indexed content: the crawl respected
+# robots.txt and the dump is the Wikimedia-provided archive, but each site's
+# licence still governs reuse of its text.
+
+use_default_settings = false
+
+[general]
+instance_name = "RustXNG (clean)"
+
+[search]
+# No external search runs: the local indexes are the only sources.
+autocomplete = ""
+official_sites = false
+local_index_path = "index-docs"
+wikipedia_index_path = "index-wikipedia"
+local_index_merge = true

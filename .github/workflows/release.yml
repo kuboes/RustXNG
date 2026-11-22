@@ -1,0 +1,359 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      source_ref:
+        required: true
+        type: string
+      dry_run:
+        type: boolean
+        default: false
+      legacy_assets:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Stable version tag, e.g. v0.27.0'
+        required: true
+        type: string
+      source_ref:
+        description: 'Optional exact commit/ref; publishing still requires main CI'
+        type: string
+      dry_run:
+        description: 'Build and verify; do not publish releases or images'
+        type: boolean
+        default: true
+      legacy_assets:
+        description: 'Use the pre-ARM64 target set for an old release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  DRY_RUN: ${{ inputs.dry_run || false }}
+  SOURCE_REF: ${{ inputs.source_ref || '' }}
+  GH_REPO: ${{ github.repository }}
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          LEGACY: ${{ inputs.legacy_assets || false }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import os; from tools.release_tools import version; version(os.environ["RELEASE_TAG"])'
+          ref="${SOURCE_REF:-refs/tags/$RELEASE_TAG}"
+          sha=$(git rev-parse --verify --end-of-options "$ref^{commit}")
+          if tagged=$(git rev-parse --verify --end-of-options "refs/tags/$RELEASE_TAG^{commit}" 2>/dev/null); then
+            test "$tagged" = "$sha" || { echo 'tag/source mismatch' >&2; exit 1; }
+          fi
+          if [ "$DRY_RUN" != true ]; then
+            git merge-base --is-ancestor "$sha" origin/main
+            # A dispatch can outrun the main CI run for the release commit
+            # (CI needs several minutes); wait for it instead of failing.
+            deadline=$(( $(date +%s) + 900 ))
+            while :; do
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=push&per_page=100" > "$RUNNER_TEMP/ci-runs.json"
+              if python3 tools/release_tools.py ci-gate --tag "$RELEASE_TAG" --sha "$sha" --repository "$GITHUB_REPOSITORY" --runs "$RUNNER_TEMP/ci-runs.json"; then
+                break
+              fi
+              if jq -e '[.workflow_runs[] | select(.name == "ci" and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion != "success")] | length > 0' "$RUNNER_TEMP/ci-runs.json" > /dev/null; then
+                echo 'main CI for the release commit completed without success' >&2
+                exit 1
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo 'timed out waiting for main CI for the release commit' >&2
+                exit 1
+              fi
+              echo 'Waiting for main CI for the release commit to succeed...'
+              sleep 30
+            done
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          targets = json.loads(Path('.github/release-targets.json').read_text())
+          if os.environ['LEGACY'] == 'true':
+              targets = [target for target in targets if not target.get('since_arm64')]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('matrix=' + json.dumps({'include': targets}, separators=(',', ':')) + '\n')
+              out.write('targets=' + ' '.join(target['target'] for target in targets) + '\n')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.plan.outputs.sha }}
+          path: source
+      - name: Require matching package versions and real release notes
+        run: |
+          python3 tools/release_tools.py validate --root source --tag "$RELEASE_TAG"
+          python3 tools/release_tools.py notes --root source --tag "$RELEASE_TAG"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: audit-cache
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Install pinned release audit tool
+        if: steps.audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - name: Audit the actual release lockfile against current advisories
+        working-directory: source
+        run: cargo audit --json > "$RUNNER_TEMP/release-audit.json" 2> "$RUNNER_TEMP/release-audit.log" || true
+      - name: Require current release dependency policy
+        run: python3 tools/check_audit.py "$RUNNER_TEMP/release-audit.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-dependency-audit
+          path: |
+            ${{ runner.temp }}/release-audit.json
+            ${{ runner.temp }}/release-audit.log
+          retention-days: 30
+          if-no-files-found: warn
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: source
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: source -> target
+          key: release-${{ matrix.target }}
+      - name: Install musl
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build locked release binaries
+        working-directory: source
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Check ARM64 slim build
+        if: matrix.slim_check
+        working-directory: source
+        run: cargo build --locked --no-default-features --target ${{ matrix.target }}
+      - name: Verify binary architecture and version
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARTIFACT: ${{ matrix.artifact }}
+          NATIVE: ${{ matrix.native }}
+        run: |
+          set -euo pipefail
+          # macOS ships Bash 3.2, where an empty array with nounset fails.
+          args=(python tools/release_tools.py binary --tag "$RELEASE_TAG" --target "$TARGET" --binary "source/target/$TARGET/release/$ARTIFACT")
+          if [ "$NATIVE" = true ]; then args+=(--native); fi
+          "${args[@]}"
+      - name: Offline startup and fake-engine search
+        if: matrix.native
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: python tools/smoke_agent_setup.py --binary "source/target/$TARGET/release/$ARTIFACT"
+      - name: Package and checksum
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, os, shutil
+          from pathlib import Path
+          target, artifact, tag = (os.environ[key] for key in ('TARGET', 'ARTIFACT', 'RELEASE_TAG'))
+          name = f'rustxng-{tag}-{target}' + ('.exe' if artifact.endswith('.exe') else '')
+          Path('dist').mkdir(exist_ok=True)
+          path = Path('dist') / name
+          shutil.copyfile(Path('source/target') / target / 'release' / artifact, path)
+          with path.open('rb') as stream:
+              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+          path.with_name(name + '.sha256').write_text(f'{digest}  {name}\n', encoding='utf-8', newline='\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  stage:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      published: ${{ steps.stage.outputs.published }}
+    steps:
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: source
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+      - name: Verify complete asset set
+        env:
+          TARGETS: ${{ needs.plan.outputs.targets }}
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          cp source/LICENSE source/NOTICE dist/
+          read -r -a targets <<< "$TARGETS"
+          python3 tools/release_tools.py manifest --tag "$RELEASE_TAG" --sha "$SOURCE_SHA" --targets "${targets[@]}"
+          python3 tools/release_tools.py notes --root source --tag "$RELEASE_TAG" > "$RUNNER_TEMP/notes.md"
+      - id: stage
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+          TARGETS: ${{ needs.plan.outputs.targets }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release.json" 2>/dev/null; then
+            if [ "$(jq -r .isDraft "$RUNNER_TEMP/release.json")" = false ]; then
+              mkdir -p "$RUNNER_TEMP/published"
+              gh release download "$RELEASE_TAG" --dir "$RUNNER_TEMP/published" 2>/dev/null || true
+              if [ -n "$(find "$RUNNER_TEMP/published" -type f -print -quit)" ]; then
+                read -r -a targets <<< "$TARGETS"
+                python3 tools/release_tools.py verify --tag "$RELEASE_TAG" --dist "$RUNNER_TEMP/published" --sha "$SOURCE_SHA" --targets "${targets[@]}"
+                rm -f dist/release-manifest.json
+                cp "$RUNNER_TEMP/published/"* dist/
+                echo 'published=true' >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              # release-please publishes the release before this job runs,
+              # so a first pass can find it published but still assetless.
+              # No published bytes exist to protect yet: fall through and
+              # stage the built assets instead of failing the release.
+              echo 'Release is published but has no assets; staging the built assets.' >&2
+            fi
+          else
+            gh release create "$RELEASE_TAG" --draft --target "$SOURCE_SHA" --title "RustXNG $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          # Rebuilds can replace draft bytes; published bytes are never overwritten.
+          gh release edit "$RELEASE_TAG" --target "$SOURCE_SHA" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          mkdir -p "$RUNNER_TEMP/verify"
+          gh release download "$RELEASE_TAG" --dir "$RUNNER_TEMP/verify"
+          read -r -a targets <<< "$TARGETS"
+          python3 tools/release_tools.py verify --tag "$RELEASE_TAG" --dist "$RUNNER_TEMP/verify" --sha "$SOURCE_SHA" --targets "${targets[@]}"
+          echo 'published=false' >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        if: ${{ !inputs.dry_run && steps.stage.outputs.published != 'true' && needs.plan.outputs.sha == github.sha }}
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-release-assets
+          path: dist/*
+          retention-days: 7
+
+  container:
+    needs: [plan, stage]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+      source_ref: ${{ needs.plan.outputs.sha }}
+      dry_run: ${{ inputs.dry_run || false }}
+
+  publish:
+    needs: [plan, stage, container]
+    if: ${{ always() && !inputs.dry_run && needs.stage.result == 'success' && (needs.container.result == 'success' || needs.stage.outputs.published == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish verified release and repair stable aliases on retries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.container.outputs.image }}
+          DIGEST: ${{ needs.container.outputs.digest }}
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+          PUBLISHED: ${{ needs.stage.outputs.published }}
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          promote=$(python3 tools/release_tools.py promote --tag "$RELEASE_TAG" --current-tag "$current")
+          if [ "$promote" != true ]; then
+            if [ "$PUBLISHED" != true ]; then gh release edit "$RELEASE_TAG" --draft=false --latest=false; fi
+            echo 'Historical release verified; stable image aliases are unchanged.'
+            exit 0
+          fi
+          image="${IMAGE:-ghcr.io/${GITHUB_REPOSITORY,,}}"
+          if [ -z "$DIGEST" ]; then
+            DIGEST=$(docker buildx imagetools inspect "$image:${RELEASE_TAG#v}" | awk '/^Digest:/ {print $2; exit}')
+          fi
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker pull "$image@$DIGEST"
+          revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image@$DIGEST")
+          test "$revision" = "$SOURCE_SHA"
+          bash tools/smoke_container.sh "$image@$DIGEST" "${RELEASE_TAG#v}"
+          if [ "$PUBLISHED" != true ]; then gh release edit "$RELEASE_TAG" --draft=false --latest; fi
+          minor="${RELEASE_TAG%.*}"
+          docker buildx imagetools create --tag "$image:latest" --tag "$image:${minor#v}" "$image@$DIGEST"

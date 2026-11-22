@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Changelog — toolkit</title></head>
+<body>
+<header role="banner">toolkit</header>
+<nav aria-label="Project"><a href="/docs">Docs</a><a href="/changelog">Changelog</a><a href="/issues">Issues</a></nav>
+<main>
+<article>
+<h1>Changelog</h1>
+<p>Notable changes are listed newest first. Patch releases only fix behaviour that the previous minor release broke.</p>
+<h2>Unreleased</h2>
+<ul>
+<li>Extraction keeps table captions above the rows.</li>
+<li>Extraction no longer repeats a formula rendered twice.</li>
+</ul>
+<h2>0.27.1 — 2026-11-03</h2>
+<ul>
+<li>Fix a panic when the input directory is empty.</li>
+<li>Fix an off-by-one in the page limit.</li>
+</ul>
+<pre><code>toolkit extract --limit 4000
+</code></pre>
+<h2>0.27.0 — 2026-10-21</h2>
+<ul>
+<li>Add <code>--format jsonl</code>.</li>
+<li>Remove the unused infobox module.</li>
+</ul>
+<h2>0.26.0 — 2026-09-30</h2>
+<ul>
+<li>First release with the lease queue.</li>
+</ul>
+</article>
+</main>
+<footer role="contentinfo">© 2026 toolkit contributors</footer>
+</body>
+</html>

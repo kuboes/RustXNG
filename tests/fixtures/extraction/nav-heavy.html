@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Search operators reference</title></head>
+<body>
+<header role="banner">
+<a href="/">Example Search</a>
+<nav aria-label="Primary"><a href="/web">Web</a><a href="/images">Images</a><a href="/news">News</a><a href="/maps">Maps</a></nav>
+</header>
+<nav aria-label="Mega menu">
+<a href="/a1">Products</a><a href="/a2">Solutions</a><a href="/a3">Pricing</a><a href="/a4">Docs</a>
+<a href="/a5">Community</a><a href="/a6">Blog</a><a href="/a7">Events</a><a href="/a8">Careers</a>
+<a href="/a9">Support</a><a href="/a10">Status</a><a href="/a11">Security</a><a href="/a12">Legal</a>
+</nav>
+<main>
+<nav aria-label="Breadcrumb"><a href="/">Home</a><a href="/docs">Docs</a><a href="/docs/query">Query syntax</a></nav>
+<article>
+<h1>Search operators reference</h1>
+<p>The query language accepts three operators. They may be combined in one query, and a quoted phrase is treated as a single term.</p>
+<table>
+<caption>Table 3: Operators</caption>
+<tr><th>Operator</th><th>Example</th><th>Meaning</th></tr>
+<tr><td>site:</td><td>site:example.org leases</td><td>Restrict the result to one host</td></tr>
+<tr><td>-</td><td>leases -auction</td><td>Exclude a term</td></tr>
+<tr><td>""</td><td>"work stealing"</td><td>Match the phrase exactly</td></tr>
+</table>
+<p>An operator only applies to the term that follows it, so the order of terms in the query matters.</p>
+</article>
+<nav aria-label="Pagination"><a href="?page=1">1</a><a href="?page=2">2</a><a href="?page=3">3</a></nav>
+</main>
+<footer role="contentinfo"><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/contact">Contact</a></footer>
+</body>
+</html>

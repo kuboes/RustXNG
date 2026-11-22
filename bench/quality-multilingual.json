@@ -1,0 +1,561 @@
+{
+  "version": 1,
+  "description": "60 technical documentation questions (20 Japanese, 20 Korean, 20 English) with gold URL prefixes, for measuring multilingual URL quality of the search API. Gold pages are stable public documentation; queries are what an agent looks up before writing code.",
+  "queries": [
+    {
+      "id": "ja-ml-asyncio",
+      "lang": "ja",
+      "query": "python asyncio 非同期 ドキュメント",
+      "gold": [
+        "https://docs.python.org/ja/3/library/asyncio.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-typing",
+      "lang": "ja",
+      "query": "python typing 型ヒント ジェネリクス",
+      "gold": [
+        "https://docs.python.org/ja/3/library/typing.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-re",
+      "lang": "ja",
+      "query": "python 正規表現 re モジュール",
+      "gold": [
+        "https://docs.python.org/ja/3/library/re.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-pathlib",
+      "lang": "ja",
+      "query": "python pathlib パス 操作",
+      "gold": [
+        "https://docs.python.org/ja/3/library/pathlib.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-rs-ownership",
+      "lang": "ja",
+      "query": "rust 所有権 借用 チュートリアル",
+      "gold": [
+        "https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-rs-vec",
+      "lang": "ja",
+      "query": "rust vec ベクタ 使い方",
+      "gold": [
+        "https://doc.rust-lang.org/std/vec"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-rs-cargo",
+      "lang": "ja",
+      "query": "cargo.toml 設定 リファレンス",
+      "gold": [
+        "https://doc.rust-lang.org/cargo/reference/manifest.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-mdn-fetch",
+      "lang": "ja",
+      "query": "javascript fetch api 使い方",
+      "gold": [
+        "https://developer.mozilla.org/ja/docs/Web/API/Fetch_API"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-mdn-promise",
+      "lang": "ja",
+      "query": "javascript promise 非同期処理",
+      "gold": [
+        "https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Global_Objects/Promise"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-k8s-pod",
+      "lang": "ja",
+      "query": "kubernetes pod とは ドキュメント",
+      "gold": [
+        "https://kubernetes.io/ja/docs/concepts/workloads/pods/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-react-hooks",
+      "lang": "ja",
+      "query": "react hooks 一覧 公式",
+      "gold": [
+        "https://ja.react.dev/reference/react"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-django-orm",
+      "lang": "ja",
+      "query": "django queryset クエリ 発行",
+      "gold": [
+        "https://docs.djangoproject.com/ja/stable/topics/db/queries/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-fastapi",
+      "lang": "ja",
+      "query": "fastapi チュートリアル 日本語",
+      "gold": [
+        "https://fastapi.tiangolo.com/ja/tutorial/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-postgres-json",
+      "lang": "ja",
+      "query": "postgresql json 関数 日本語",
+      "gold": [
+        "https://www.postgresql.jp/document/current/html/functions-json.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-git-rebase",
+      "lang": "ja",
+      "query": "git rebase 使い方",
+      "gold": [
+        "https://git-scm.com/docs/git-rebase"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-docker-compose",
+      "lang": "ja",
+      "query": "docker compose ファイル 書き方",
+      "gold": [
+        "https://docs.docker.com/reference/compose-file/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-nginx",
+      "lang": "ja",
+      "query": "nginx 設定 ディレクティブ 一覧",
+      "gold": [
+        "https://nginx.org/en/docs/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-tokio",
+      "lang": "ja",
+      "query": "tokio 非同期ランタイム 入門",
+      "gold": [
+        "https://tokio.rs/"
+      ],
+      "category": "official"
+    },
+    {
+      "id": "ja-ml-numpy",
+      "lang": "ja",
+      "query": "numpy 配列 インデックス 参照",
+      "gold": [
+        "https://numpy.org/doc/stable/user/basics.indexing"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ja-ml-linux-sched",
+      "lang": "ja",
+      "query": "linux カーネル スケジューラ ドキュメント",
+      "gold": [
+        "https://docs.kernel.org/scheduler"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-asyncio",
+      "lang": "ko",
+      "query": "python asyncio 비동기 문서",
+      "gold": [
+        "https://docs.python.org/ko/3/library/asyncio.html",
+        "https://docs.python.org/3/library/asyncio.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-typing",
+      "lang": "ko",
+      "query": "python typing 타입 힌트",
+      "gold": [
+        "https://docs.python.org/ko/3/library/typing.html",
+        "https://docs.python.org/3/library/typing.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-re",
+      "lang": "ko",
+      "query": "python 정규표현식 re 모듈",
+      "gold": [
+        "https://docs.python.org/ko/3/library/re.html",
+        "https://docs.python.org/3/library/re.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-pathlib",
+      "lang": "ko",
+      "query": "python pathlib 경로 다루기",
+      "gold": [
+        "https://docs.python.org/ko/3/library/pathlib.html",
+        "https://docs.python.org/3/library/pathlib.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-mdn-array",
+      "lang": "ko",
+      "query": "javascript 배열 array 메서드",
+      "gold": [
+        "https://developer.mozilla.org/ko/docs/Web/JavaScript/Reference/Global_Objects/Array",
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-mdn-fetch",
+      "lang": "ko",
+      "query": "javascript fetch api 사용법",
+      "gold": [
+        "https://developer.mozilla.org/ko/docs/Web/API/Fetch_API",
+        "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-k8s-pod",
+      "lang": "ko",
+      "query": "kubernetes 파드 pod 문서",
+      "gold": [
+        "https://kubernetes.io/ko/docs/concepts/workloads/pods/",
+        "https://kubernetes.io/docs/concepts/workloads/pods/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-k8s-deploy",
+      "lang": "ko",
+      "query": "kubernetes 디플로이먼트 deployment",
+      "gold": [
+        "https://kubernetes.io/ko/docs/concepts/workloads/controllers/deployment/",
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-react-hooks",
+      "lang": "ko",
+      "query": "react hooks 공식 문서",
+      "gold": [
+        "https://ko.react.dev/reference/react",
+        "https://react.dev/reference/react"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-react-usestate",
+      "lang": "ko",
+      "query": "react usestate 훅 사용법",
+      "gold": [
+        "https://ko.react.dev/reference/react/useState",
+        "https://react.dev/reference/react/useState"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-django-orm",
+      "lang": "ko",
+      "query": "django queryset 문서",
+      "gold": [
+        "https://docs.djangoproject.com/ko/stable/topics/db/queries/",
+        "https://docs.djangoproject.com/en/stable/topics/db/queries/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-fastapi",
+      "lang": "ko",
+      "query": "fastapi 튜토리얼 문서",
+      "gold": [
+        "https://fastapi.tiangolo.com/ko/tutorial/",
+        "https://fastapi.tiangolo.com/tutorial/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-vue",
+      "lang": "ko",
+      "query": "vue 입문 가이드",
+      "gold": [
+        "https://ko.vuejs.org/guide/introduction",
+        "https://vuejs.org/guide/introduction"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-typescript",
+      "lang": "ko",
+      "query": "typescript 핸드북 문서",
+      "gold": [
+        "https://www.typescriptlang.org/ko/docs/handbook/intro.html",
+        "https://www.typescriptlang.org/docs/handbook/intro.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-rs-ownership",
+      "lang": "ko",
+      "query": "rust 소유권 빌림",
+      "gold": [
+        "https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-rs-cargo",
+      "lang": "ko",
+      "query": "cargo.toml 매니페스트 참조",
+      "gold": [
+        "https://doc.rust-lang.org/cargo/reference/manifest.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-docker-compose",
+      "lang": "ko",
+      "query": "docker compose 파일 레퍼런스",
+      "gold": [
+        "https://docs.docker.com/reference/compose-file/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-git-rebase",
+      "lang": "ko",
+      "query": "git rebase 사용법",
+      "gold": [
+        "https://git-scm.com/docs/git-rebase"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-numpy",
+      "lang": "ko",
+      "query": "numpy 배열 인덱싱",
+      "gold": [
+        "https://numpy.org/doc/stable/user/basics.indexing"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "ko-ml-tokio",
+      "lang": "ko",
+      "query": "tokio 러스트 비동기 런타임",
+      "gold": [
+        "https://tokio.rs/"
+      ],
+      "category": "official"
+    },
+    {
+      "id": "en-ml-rs-ownership",
+      "lang": "en",
+      "query": "rust ownership and borrowing book",
+      "gold": [
+        "https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-rs-iter",
+      "lang": "en",
+      "query": "rust iterator trait documentation",
+      "gold": [
+        "https://doc.rust-lang.org/std/iter"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-py-pathlib",
+      "lang": "en",
+      "query": "python pathlib documentation",
+      "gold": [
+        "https://docs.python.org/3/library/pathlib.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-mdn-fetch",
+      "lang": "en",
+      "query": "mdn fetch api usage",
+      "gold": [
+        "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-k8s-pod",
+      "lang": "en",
+      "query": "kubernetes pod lifecycle documentation",
+      "gold": [
+        "https://kubernetes.io/docs/concepts/workloads/pods/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-k8s-deployment",
+      "lang": "en",
+      "query": "kubernetes deployment rollout documentation",
+      "gold": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-react-usestate",
+      "lang": "en",
+      "query": "react usestate hook reference",
+      "gold": [
+        "https://react.dev/reference/react/useState"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-django-orm",
+      "lang": "en",
+      "query": "django making queries orm documentation",
+      "gold": [
+        "https://docs.djangoproject.com/en/stable/topics/db/queries"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-fastapi",
+      "lang": "en",
+      "query": "fastapi tutorial user guide",
+      "gold": [
+        "https://fastapi.tiangolo.com/tutorial/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-ts-handbook",
+      "lang": "en",
+      "query": "typescript handbook documentation",
+      "gold": [
+        "https://www.typescriptlang.org/docs/handbook/intro.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-docker-compose",
+      "lang": "en",
+      "query": "docker compose file reference",
+      "gold": [
+        "https://docs.docker.com/reference/compose-file/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-nginx",
+      "lang": "en",
+      "query": "nginx documentation directives",
+      "gold": [
+        "https://nginx.org/en/docs/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-postgres-json",
+      "lang": "en",
+      "query": "postgresql json functions documentation",
+      "gold": [
+        "https://www.postgresql.org/docs/current/functions-json.html"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-git-rebase",
+      "lang": "en",
+      "query": "git rebase documentation",
+      "gold": [
+        "https://git-scm.com/docs/git-rebase"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-tokio-tutorial",
+      "lang": "en",
+      "query": "tokio tutorial async rust",
+      "gold": [
+        "https://tokio.rs/tokio/tutorial",
+        "https://tokio.rs/"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-numpy-index",
+      "lang": "en",
+      "query": "numpy indexing arrays guide",
+      "gold": [
+        "https://numpy.org/doc/stable/user/basics.indexing"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-kernel-sched",
+      "lang": "en",
+      "query": "linux kernel scheduler documentation",
+      "gold": [
+        "https://docs.kernel.org/scheduler"
+      ],
+      "category": "doc"
+    },
+    {
+      "id": "en-ml-http-rfc",
+      "lang": "en",
+      "query": "http semantics rfc 9110",
+      "gold": [
+        "https://www.rfc-editor.org/rfc/rfc9110"
+      ],
+      "category": "official"
+    },
+    {
+      "id": "en-ml-serde",
+      "lang": "en",
+      "query": "serde rust serialization documentation",
+      "gold": [
+        "https://serde.rs/"
+      ],
+      "category": "official"
+    },
+    {
+      "id": "en-ml-aws-ec2",
+      "lang": "en",
+      "query": "aws ec2 documentation",
+      "gold": [
+        "https://docs.aws.amazon.com/ec2"
+      ],
+      "category": "official"
+    }
+  ]
+}
