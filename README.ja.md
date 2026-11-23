@@ -11,6 +11,10 @@
 
 RustXNGは、Rustで作られたセルフホスト型メタ検索エンジンです。[SearXNG](https://github.com/searxng/searxng)をもとに作りました。複数の検索サービスから結果を集めて、JSON APIやMCPを使ってAIエージェントに渡せます。
 
+> **注意:** このリポジトリは、元のRustXNGプロジェクト（元のリポジトリは削除されました）を引き継いだフォークです。RustXNGのコードをもとに、kuboes/RustXNGとして継続しています。
+
+> **公開インスタンス:** <https://search.kubobeem.tech/>
+
 Web全体を独自に索引化する検索エンジンではありません。必要なサイトをクロールしてローカル索引を作ったり、Wikipediaの公式ダンプから索引を作ったりできます。
 
 ## 使い始める
