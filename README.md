@@ -9,6 +9,7 @@
   </picture>
 </p>
 
+## fork置いとくねってとこ
 RustXNG is a self-hosted metasearch engine written in Rust, based on [SearXNG](https://github.com/searxng/searxng). It combines results from external search providers and can fetch page text for AI agents through a JSON API or MCP.
 
 > **Note:** This repository is a fork continuing the original RustXNG project (the original repository was deleted). It is based on the RustXNG codebase, maintained here as kuboes/RustXNG.
