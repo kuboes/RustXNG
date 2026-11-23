@@ -59,6 +59,10 @@ curl --get 'https://search.kubobeem.tech/search' \
 
 レスポンスはJSONで、`query` と `results` の配列（各要素に `title`、`url`、`content`、`engine`、`score`）が返ります。`language=ja`、`engines=wikipedia`、`include_domains=docs.rs`、`exclude_domains=example.com`、`time_range=day`、`include_raw_content=1`、`strict_engines=1` などの指定もできます。
 
+## MCP
+
+同じ機能を Streamable HTTP の MCP としても公開しています。URL は <https://search.kubobeem.tech/mcp>（APIキー不要）。使えるツールは `search`（検索結果、既定5件）と `read_page`（`search` で返った URL の本文取得）の2つです。MCP クライアントからこの URL を指定してください。ローカルで使う場合は `rustxng mcp` で stdio 版が動きます。
+
 ## AIエージェントから使う
 
 エージェント自身が導入から動作確認まで行う手順は、[エージェント向け導入ガイド](docs/AGENT-SETUP.md)にまとめています。配布バイナリの選択とチェックサム検証、ループバックでの起動、小さな検索での動作確認、報告の書式までです。

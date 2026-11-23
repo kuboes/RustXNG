@@ -60,6 +60,10 @@ curl --get 'https://search.kubobeem.tech/search' \
 
 The response is JSON with `query` and a `results` array (each with `title`, `url`, `content`, `engine`, `score`). Optional parameters: `language=ja`, `engines=wikipedia`, `include_domains=docs.rs`, `exclude_domains=example.com`, `time_range=day`, `include_raw_content=1`, `strict_engines=1`.
 
+## MCP
+
+The same tools are available over Streamable HTTP at <https://search.kubobeem.tech/mcp> (no API key). It exposes two tools: `search` (ranked results, default 5) and `read_page` (page text for a URL from `search`). Point any MCP client at that URL. For local use, `rustxng mcp` runs the same server over stdio.
+
 ## Use from an AI agent
 
 If the agent is expected to install RustXNG itself, the [agent setup guide](docs/AGENT-SETUP.md) is written for exactly that: it covers release-binary selection and checksum verification, starting a loopback service, verifying a small search, and the record to report back.
