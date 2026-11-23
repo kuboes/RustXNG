@@ -27,7 +27,7 @@ A future organization transfer requires a separate owner decision; none is plann
 
 ## Apply to maintain an area
 
-Use the [maintainer application form](https://github.com/RustXNG/RustXNG/issues/new?template=maintainer_application.yml).
+Use the [maintainer application form](https://github.com/kuboes/RustXNG/issues/new?template=maintainer_application.yml).
 Include your GitHub account, proposed area, relevant contributions or experience, review interests,
 and realistic availability. Experience from other projects counts; commit counts are not a ranking system.
 Do not put private contact information, credentials, or employment information in a public application.

@@ -41,7 +41,7 @@ Keep errors and misses in the denominator, record cache/local-index settings, an
 The [November 5 Japanese troubleshooting observations](../bench/results/issue-resolution-2026-11-05/japanese/baseline/summary.json) show poor reference-page recall in a specific older API-backed test configuration. They do not establish the current v0.30.0 performance for that workload.
 Full error text, a shortened query and quoted exact text can behave differently; language handling and source coverage matter.
 Use the benchmark report form with a public error example and an expected source URL.
-Japanese technical retrieval and broad/current-information collection are tracked in [GitHub Issues](https://github.com/RustXNG/RustXNG/issues).
+Japanese technical retrieval and broad/current-information collection are tracked in [GitHub Issues](https://github.com/kuboes/RustXNG/issues).
 
 A pinpoint troubleshooting task can prioritize one authoritative matching page and a small result count.
 A broad current-information task needs multiple independent sources, coverage, freshness and missing-source reporting.
@@ -57,7 +57,7 @@ MCP provides character/byte budgets and up to three query-matched passages from 
 ## Does it support Linux ARM?
 
 Linux ARM64 (`aarch64-unknown-linux-gnu`, glibc 2.39+) binaries are available from releases after v0.26.0, including v0.28.0.
-Linux ARMv7 and Linux ARM64 musl are separate, unsupported binary targets. Check the current [release assets](https://github.com/RustXNG/RustXNG/releases) and checksum for your platform; macOS ARM64 binaries do not run on Linux.
+Linux ARMv7 and Linux ARM64 musl are separate, unsupported binary targets. Check the current [release assets](https://github.com/kuboes/RustXNG/releases) and checksum for your platform; macOS ARM64 binaries do not run on Linux.
 
 ## The MCP client hangs on `tools/list` over stdio on Windows. What should I check?
 

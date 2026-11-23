@@ -25,21 +25,21 @@ Contributor access still follows [MAINTAINERS.md](../../MAINTAINERS.md); reposit
 An owner can reconcile repository and main settings after reviewing the live values:
 
 ```bash
-gh api repos/RustXNG/RustXNG
-gh api repos/RustXNG/RustXNG/branches/main/protection
-gh api repos/RustXNG/RustXNG/rulesets
+gh api repos/kuboes/RustXNG
+gh api repos/kuboes/RustXNG/branches/main/protection
+gh api repos/kuboes/RustXNG/rulesets
 # Writes, only after reviewing the JSON:
-gh api --method PATCH repos/RustXNG/RustXNG --input .github/repository-settings/repository.json
-gh api --method PUT repos/RustXNG/RustXNG/branches/main/protection --input .github/repository-settings/main-protection.json
-gh api --method PUT repos/RustXNG/RustXNG/actions/permissions --input .github/repository-settings/actions-permissions.json
-gh api --method PUT repos/RustXNG/RustXNG/actions/permissions/workflow --input .github/repository-settings/workflow-permissions.json
+gh api --method PATCH repos/kuboes/RustXNG --input .github/repository-settings/repository.json
+gh api --method PUT repos/kuboes/RustXNG/branches/main/protection --input .github/repository-settings/main-protection.json
+gh api --method PUT repos/kuboes/RustXNG/actions/permissions --input .github/repository-settings/actions-permissions.json
+gh api --method PUT repos/kuboes/RustXNG/actions/permissions/workflow --input .github/repository-settings/workflow-permissions.json
 ```
 
 The tag ruleset already exists (ID 26350142). Review and update that ID rather than creating duplicates:
 
 ```bash
-gh api repos/RustXNG/RustXNG/rulesets/26350142
-gh api --method PUT repos/RustXNG/RustXNG/rulesets/26350142 --input .github/repository-settings/release-tags.json
+gh api repos/kuboes/RustXNG/rulesets/26350142
+gh api --method PUT repos/kuboes/RustXNG/rulesets/26350142 --input .github/repository-settings/release-tags.json
 ```
 
 If ownership or the active maintainer roster changes, review the bypass account, CODEOWNERS, and approval count together.

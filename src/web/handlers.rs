@@ -648,11 +648,11 @@ pub async fn config(State(state): State<AppState>) -> Response {
         .collect();
     let brand = serde_json::json!({
         "CONTACT_URL": settings.general.contact_url.clone(),
-        "DOCS_URL": "https://github.com/RustXNG/RustXNG/tree/main/docs",
-        "GIT_URL": "https://github.com/RustXNG/RustXNG",
+        "DOCS_URL": "https://github.com/kuboes/RustXNG/tree/main/docs",
+        "GIT_URL": "https://github.com/kuboes/RustXNG",
         "GIT_BRANCH": "main",
-        "ISSUE_URL": "https://github.com/RustXNG/RustXNG/issues",
-        "NEW_ISSUE_URL": "https://github.com/RustXNG/RustXNG/issues/new/choose",
+        "ISSUE_URL": "https://github.com/kuboes/RustXNG/issues",
+        "NEW_ISSUE_URL": "https://github.com/kuboes/RustXNG/issues/new/choose",
         "PRIVACYPOLICY_URL": settings.general.privacypolicy_url.clone(),
         "DONATION_URL": settings.general.donation_url.clone(),
     });

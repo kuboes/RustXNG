@@ -7,9 +7,9 @@ The [documentation index](docs/README.md) lists the guides by purpose; design de
 
 ## Choose the right place
 
-- Reproducible bug or scoped feature: [Issues](https://github.com/RustXNG/RustXNG/issues).
-- Usage questions, exploratory ideas, or sharing an integration: [Discussions](https://github.com/RustXNG/RustXNG/discussions).
-- Security vulnerability: [private reporting](https://github.com/RustXNG/RustXNG/security/advisories/new), following [SECURITY.md](SECURITY.md).
+- Reproducible bug or scoped feature: [Issues](https://github.com/kuboes/RustXNG/issues).
+- Usage questions, exploratory ideas, or sharing an integration: [Discussions](https://github.com/kuboes/RustXNG/discussions).
+- Security vulnerability: [private reporting](https://github.com/kuboes/RustXNG/security/advisories/new), following [SECURITY.md](SECURITY.md).
 - Maintainer participation: the dedicated Issue form. An application does not grant access automatically.
 
 Read existing Issues/PRs before starting. Large API, ranking, networking, and architecture changes should have an agreed
@@ -22,7 +22,7 @@ Use stable Rust (minimum 1.89 for the current lockfile) and a C build toolchain.
 PDF tests also require Poppler (`pdftotext`) and Japanese CMap data; see [page extraction requirements](README.md#use-from-an-ai-agent).
 
 ```bash
-git clone https://github.com/RustXNG/RustXNG.git
+git clone https://github.com/kuboes/RustXNG.git
 cd RustXNG
 cargo test --all-targets
 ```

@@ -13,7 +13,7 @@ pub const PRODUCT: &str = "rustxng-index";
 /// place to read about the bot, never a browser look-alike.
 pub fn user_agent(contact: &str) -> String {
     let base = format!(
-        "{PRODUCT}/{} (+https://github.com/RustXNG/RustXNG",
+        "{PRODUCT}/{} (+https://github.com/kuboes/RustXNG",
         env!("CARGO_PKG_VERSION")
     );
     let contact = contact.trim();

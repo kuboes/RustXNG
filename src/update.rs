@@ -8,8 +8,8 @@ use sha2::{Digest, Sha256};
 
 use crate::fetch::is_fetchable;
 
-const API: &str = "https://api.github.com/repos/RustXNG/RustXNG/releases/latest";
-const DOWNLOAD_PREFIX: &str = "https://github.com/RustXNG/RustXNG/releases/download/";
+const API: &str = "https://api.github.com/repos/kuboes/RustXNG/releases/latest";
+const DOWNLOAD_PREFIX: &str = "https://github.com/kuboes/RustXNG/releases/download/";
 const MAX_BINARY: usize = 256 * 1024 * 1024;
 
 #[derive(Deserialize)]

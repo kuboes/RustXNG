@@ -934,7 +934,7 @@ pub fn is_documented_api_host(url: &str) -> bool {
 /// The User-Agent of an instance that identifies itself (`identified_ua`).
 pub fn identified_user_agent(contact: &str) -> String {
     let base = format!(
-        "rustxng/{} (+https://github.com/RustXNG/RustXNG",
+        "rustxng/{} (+https://github.com/kuboes/RustXNG",
         env!("CARGO_PKG_VERSION")
     );
     match contact.trim() {

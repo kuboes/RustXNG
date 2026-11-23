@@ -19,11 +19,11 @@ RustXNG does not maintain a web-scale search index. You can add a local index of
 
 ## Quick start
 
-Install from the [releases page](https://github.com/RustXNG/RustXNG/releases) or with Cargo. Release binaries are available for Linux, macOS and Windows; check the matching asset and its SHA-256 sidecar before running it.
+Install from the [releases page](https://github.com/kuboes/RustXNG/releases) or with Cargo. Release binaries are available for Linux, macOS and Windows; check the matching asset and its SHA-256 sidecar before running it.
 
 <!-- x-release-please-start-version -->
 ```bash
-cargo install --git https://github.com/RustXNG/RustXNG.git --tag v0.32.0 --locked
+cargo install --git https://github.com/kuboes/RustXNG.git --tag v0.32.0 --locked
 ```
 <!-- x-release-please-end -->
 
@@ -143,6 +143,6 @@ Also note the structural difference behind any comparison to Exa or Tavily: Rust
 
 ## Contributing and license
 
-Bug reports and contributions are welcome through [Issues](https://github.com/RustXNG/RustXNG/issues), [Discussions](https://github.com/RustXNG/RustXNG/discussions) and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md), [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).
+Bug reports and contributions are welcome through [Issues](https://github.com/kuboes/RustXNG/issues), [Discussions](https://github.com/kuboes/RustXNG/discussions) and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md), [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).
 
 RustXNG is licensed under [AGPL-3.0-or-later](LICENSE). It builds on SearXNG's design and engine behavior; upstream and third-party attribution is preserved in [NOTICE](NOTICE). A code license does not grant permission to collect or redistribute data from external search providers.

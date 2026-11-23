@@ -85,7 +85,7 @@ Yahoo! JAPANとMojeekのアダプターは残します。利用者が明示的�
 | 変更 | 内容 |
 | --- | --- |
 | NAVER・Keenable・Swisscows を既定無効 | NAVER は公表規約との整合が未確認。Keenable は API キーがなくても公開エンドポイントを呼ぶ。Swisscows は署名付きエンドポイントの第三者利用が未確認。有効化する場合は先に許可・条件を確認してください |
-| API 提供元には識別できる User-Agent を送る | Wikimedia 系、GitHub、crates.io、PyPI、npm、Crossref、OpenAlex、Semantic Scholar、StackExchange、arXiv、Openverse、OSM（Nominatim・Photon）、Open-Meteo 宛ての通信は、ブラウザ風のローテーションではなく `rustxng/<版> (+https://github.com/RustXNG/RustXNG[; 連絡先])` を使う。連絡先は `[outgoing] contact` |
+| API 提供元には識別できる User-Agent を送る | Wikimedia 系、GitHub、crates.io、PyPI、npm、Crossref、OpenAlex、Semantic Scholar、StackExchange、arXiv、Openverse、OSM（Nominatim・Photon）、Open-Meteo 宛ての通信は、ブラウザ風のローテーションではなく `rustxng/<版> (+https://github.com/kuboes/RustXNG[; 連絡先])` を使う。連絡先は `[outgoing] contact` |
 | `read_page` / 生本文取得 | 識別できる User-Agent を使い、robots.txt（RFC 9309）に従う。robots.txt に到達できない場合のみ、利用者が求めたページは取得を続ける |
 | カテゴリ指定の誤り 22 件を修正 | `categories = ["g","e","n",...]` のように 1 文字ずつの配列になっていた。20 件は設定上有効だったが、実際にはどのカテゴリにも属していなかった。**修正後も、これまで一度も動いていないことを踏まえて 20 件とも既定無効にした**（有効化は各プロバイダーの確認後） |
 | 比較表現の修正 | `settings.toml` のコメントから他社サービスとの優劣を示す記述を除いた |

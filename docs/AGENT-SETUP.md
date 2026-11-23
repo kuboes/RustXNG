@@ -1,7 +1,7 @@
 # RustXNG setup for AI agents
 
 Use this guide when a user asks you to install RustXNG and use it for search.
-Repository: <https://github.com/RustXNG/RustXNG>.
+Repository: <https://github.com/kuboes/RustXNG>.
 日本語の開始指示は[README.ja.md](../README.ja.md)にあります。
 
 ## 1. Discover an existing service
@@ -17,7 +17,7 @@ curl --fail --max-time 3 http://127.0.0.1:29483/config
 ```
 
 Confirm that `/config` contains a `version` starting with `RustXNG` followed by a space, an `engines` array,
-and `brand.GIT_URL` equal to `https://github.com/RustXNG/RustXNG`, then verify search using step 4.
+and `brand.GIT_URL` equal to `https://github.com/kuboes/RustXNG`, then verify search using step 4.
 Reuse a working service and report its endpoint. A health response alone is insufficient.
 If the port belongs to another service, choose an unused port and preserve that service.
 
@@ -31,7 +31,7 @@ rustxng --version
 
 Inspect the OS and CPU with platform tools (`uname -s` / `uname -m` on Unix;
 `[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture` in PowerShell).
-Inspect the [release assets](https://github.com/RustXNG/RustXNG/releases) before choosing a file.
+Inspect the [release assets](https://github.com/kuboes/RustXNG/releases) before choosing a file.
 Map the reported CPU to the target prefix: `x86_64` or `amd64` → `x86_64`;
 `aarch64` or `arm64` → `aarch64`. Other CPUs (for example 32-bit `armv7l`) have no release binary.
 
@@ -52,9 +52,9 @@ Assets are standalone executables named `rustxng-<tag>-<target>`, with a `.sha25
 Download both from the same release into a new temporary directory, together with `LICENSE` and `NOTICE`.
 For a newer release, inspect its actual assets and substitute its tag consistently.
 
-The [release page](https://github.com/RustXNG/RustXNG/releases) lists binaries and checksum sidecars.
+The [release page](https://github.com/kuboes/RustXNG/releases) lists binaries and checksum sidecars.
 If `gh` is unavailable, download the selected asset from
-`https://github.com/RustXNG/RustXNG/releases/download/<tag>/<asset-name>` and its `.sha256` sidecar
+`https://github.com/kuboes/RustXNG/releases/download/<tag>/<asset-name>` and its `.sha256` sidecar
 with the platform's HTTP client. Do not substitute an HTML error page for a successful download.
 
 Verify the bytes before execution:

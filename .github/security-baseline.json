@@ -1,6 +1,6 @@
 {
   "expires": "2027-05-21",
-  "tracking_issue": "https://github.com/RustXNG/RustXNG/issues/158",
+  "tracking_issue": "https://github.com/kuboes/RustXNG/issues/158",
   "reason": "One unmaintained-transitive exception is tracked: chrono is a non-optional dependency of the MCP SDK (rmcp 3.x, all released versions) and of schemars, so it cannot be removed from this crate's tree. The advisory marks the crate unmaintained; it records no vulnerability, unsoundness or memory-safety finding. The direct use in this crate stays limited to timestamp formatting and parsing. Tracked so the gate keeps failing on anything new.",
   "findings": [
     {
