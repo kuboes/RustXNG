@@ -47,6 +47,18 @@ curl --fail --get 'http://127.0.0.1:29483/search' \
 
 ブラウザーからは<http://127.0.0.1:29483/>を開いてください。検索結果はJSONのほか、CSV、RSS、HTMLでも取得できます。
 
+## JSON API
+
+APIキーは不要です。公開インスタンスは <https://search.kubobeem.tech/> です。
+
+```bash
+curl --get 'https://search.kubobeem.tech/search' \
+  --data-urlencode 'q=rust programming' \
+  --data 'format=json' --data 'max_results=5'
+```
+
+レスポンスはJSONで、`query` と `results` の配列（各要素に `title`、`url`、`content`、`engine`、`score`）が返ります。`language=ja`、`engines=wikipedia`、`include_domains=docs.rs`、`exclude_domains=example.com`、`time_range=day`、`include_raw_content=1`、`strict_engines=1` などの指定もできます。
+
 ## AIエージェントから使う
 
 エージェント自身が導入から動作確認まで行う手順は、[エージェント向け導入ガイド](docs/AGENT-SETUP.md)にまとめています。配布バイナリの選択とチェックサム検証、ループバックでの起動、小さな検索での動作確認、報告の書式までです。

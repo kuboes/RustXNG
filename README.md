@@ -8,7 +8,7 @@
     <img src="static/logo-wordmark.png" alt="RustXNG" width="440">
   </picture>
 </p>
-## fork置いとくねってとこ
+
 RustXNG is a self-hosted metasearch engine written in Rust, based on [SearXNG](https://github.com/searxng/searxng). It combines results from external search providers and can fetch page text for AI agents through a JSON API or MCP.
 
 > **Note:** This repository is a fork continuing the original RustXNG project (the original repository was deleted). It is based on the RustXNG codebase, maintained here as kuboes/RustXNG.
@@ -46,6 +46,18 @@ curl --fail --get 'http://127.0.0.1:29483/search' \
 Results contain a title, URL, snippet and source metadata. For automated clients that need errors for unknown engine names, add `strict_engines=1` (the default preserves SearXNG-compatible fallback behavior). Useful optional parameters include `language=ja`, `engines=wikipedia`, `include_domains=docs.rs`, `exclude_domains=example.com`, `time_range=day`, and `include_raw_content=1`. Time filtering depends on provider support.
 
 The web interface is at <http://127.0.0.1:29483/>. The search endpoint also supports CSV, RSS and HTML output.
+
+## JSON API
+
+No API key is needed. The public instance is <https://search.kubobeem.tech/>:
+
+```bash
+curl --get 'https://search.kubobeem.tech/search' \
+  --data-urlencode 'q=rust programming' \
+  --data 'format=json' --data 'max_results=5'
+```
+
+The response is JSON with `query` and a `results` array (each with `title`, `url`, `content`, `engine`, `score`). Optional parameters: `language=ja`, `engines=wikipedia`, `include_domains=docs.rs`, `exclude_domains=example.com`, `time_range=day`, `include_raw_content=1`, `strict_engines=1`.
 
 ## Use from an AI agent
 
