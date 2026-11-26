@@ -264,7 +264,7 @@ impl ResultView {
         Self {
             url: result.url.clone(),
             title: result.title.clone(),
-            content: result.content.clone(),
+            content: crate::results::display_content(&result.content),
             pretty_url: result
                 .pretty_url
                 .clone()

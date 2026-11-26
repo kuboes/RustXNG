@@ -1288,6 +1288,8 @@ pub fn pretty_url(url: &str) -> String {
         Ok(parsed) => {
             let host = parsed.host_str().unwrap_or_default();
             let path = parsed.path().trim_end_matches('/');
+            // Decode %XX so Japanese paths read as text, not escapes.
+            let path = percent_encoding::percent_decode_str(path).decode_utf8_lossy();
             if path.is_empty() || path == "/" {
                 host.to_string()
             } else {
@@ -1296,6 +1298,116 @@ pub fn pretty_url(url: &str) -> String {
         }
         Err(_) => url.to_string(),
     }
+}
+
+/// Clean engine-provided result text for the UI: engines return plain-text
+/// excerpts that often carry Markdown (bold, links, tables, headings) and
+/// can run for screens. Strip the markup, collapse whitespace, and cap the
+/// excerpt so a result stays a snippet, not a wall of text.
+pub fn display_content(content: &str) -> String {
+    const MAX_CHARS: usize = 400;
+    // Drop Markdown table separator lines ("|---|---|") before flattening.
+    let mut flat = String::with_capacity(content.len());
+    for line in content.lines() {
+        let t = line.trim();
+        if !t.is_empty()
+            && t.contains('-')
+            && t.chars().all(|c| c == '|' || c == '-' || c == ':' || c == ' ')
+        {
+            continue;
+        }
+        if !flat.is_empty() {
+            flat.push(' ');
+        }
+        flat.push_str(t);
+    }
+    let mut out = strip_markdown_links(&flat);
+    for marker in ["**", "__", "~~", "`"] {
+        out = out.replace(marker, "");
+    }
+    out = out.replace('*', "");
+    out = out.replace('|', " ");
+    // Heading runs ("# ", "## ") and blockquote markers ("> ") mid-text.
+    let mut cleaned = String::with_capacity(out.len());
+    let mut i = 0;
+    let bytes = out.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] == b'#'
+            && (i == 0 || bytes[i - 1] == b' ')
+            && out[i..].chars().skip_while(|&c| c == '#').next() == Some(' ')
+        {
+            while i < bytes.len() && bytes[i] == b'#' {
+                i += 1;
+            }
+            if i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
+            continue;
+        }
+        if bytes[i] == b'>'
+            && (i == 0 || bytes[i - 1] == b' ')
+            && i + 1 < bytes.len()
+            && bytes[i + 1] == b' '
+        {
+            i += 2;
+            continue;
+        }
+        let ch = out[i..].chars().next().unwrap();
+        cleaned.push(ch);
+        i += ch.len_utf8();
+    }
+    // Collapse whitespace runs.
+    let mut collapsed = String::with_capacity(cleaned.len());
+    let mut last_space = true; // trims leading whitespace too
+    for ch in cleaned.chars() {
+        if ch.is_whitespace() {
+            if !last_space {
+                collapsed.push(' ');
+                last_space = true;
+            }
+        } else {
+            collapsed.push(ch);
+            last_space = false;
+        }
+    }
+    let mut trimmed = collapsed.trim_end().to_string();
+    if trimmed.chars().count() > MAX_CHARS {
+        trimmed = trimmed.chars().take(MAX_CHARS).collect();
+        trimmed = trimmed.trim_end().to_string();
+        trimmed.push('\u{2026}');
+    }
+    trimmed
+}
+
+/// `[text](url)` -> `text`, `![alt](url)` -> "".
+fn strip_markdown_links(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let image = bytes[i] == b'!' && i + 1 < bytes.len() && bytes[i + 1] == b'[';
+        let link = bytes[i] == b'[';
+        if image || link {
+            let open = if image { i + 1 } else { i };
+            if let Some(close_rel) = s[open + 1..].find(']') {
+                let close = open + 1 + close_rel;
+                if close + 1 < bytes.len() && bytes[close + 1] == b'(' {
+                    if let Some(end_rel) = s[close + 2..].find(')') {
+                        let end = close + 2 + end_rel;
+                        if !image {
+                            out.push_str(&s[open + 1..close]);
+                        }
+                        i = end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        let ch = s[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1735,6 +1847,32 @@ mod tests {
     fn pretty_url_strips_the_scheme() {
         assert_eq!(pretty_url("https://example.com/a/b/"), "example.com/a/b");
         assert_eq!(pretty_url("https://example.com/"), "example.com");
+    }
+
+    #[test]
+    fn pretty_url_decodes_the_path() {
+        assert_eq!(
+            pretty_url("https://dic.pixiv.net/a/%E9%87%8E%E7%8D%A3%E5%85%88%E8%BC%A9"),
+            "dic.pixiv.net/a/野獣先輩"
+        );
+    }
+
+    #[test]
+    fn display_content_strips_markdown_and_truncates() {
+        assert_eq!(
+            display_content("**ゲイビデオ**を元ネタにした[真夏の夜の淫夢](/a/xyz)です"),
+            "ゲイビデオを元ネタにした真夏の夜の淫夢です"
+        );
+        assert_eq!(
+            display_content("| 野獣先輩 | |\n|---|---|\n| 原作 | 淫夢 |"),
+            "野獣先輩 原作 淫夢"
+        );
+        assert_eq!(display_content("### 「野獣先輩」とは"), "「野獣先輩」とは");
+        assert_eq!(display_content("![Icon](//images.uncyc.org/x.png) 本文"), "本文");
+        let long = "あ".repeat(500);
+        let shown = display_content(&long);
+        assert_eq!(shown.chars().count(), 401); // 400 + …
+        assert!(shown.ends_with('\u{2026}'));
     }
 
     fn sample(url: &str) -> SearchResult {
