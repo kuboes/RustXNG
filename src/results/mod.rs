@@ -1356,21 +1356,16 @@ pub fn display_content(content: &str) -> String {
         cleaned.push(ch);
         i += ch.len_utf8();
     }
-    // Collapse whitespace runs.
-    let mut collapsed = String::with_capacity(cleaned.len());
-    let mut last_space = true; // trims leading whitespace too
-    for ch in cleaned.chars() {
-        if ch.is_whitespace() {
-            if !last_space {
-                collapsed.push(' ');
-                last_space = true;
-            }
-        } else {
-            collapsed.push(ch);
-            last_space = false;
-        }
-    }
-    let mut trimmed = collapsed.trim_end().to_string();
+    // Collapse whitespace runs, dropping stray table-separator tokens
+    // ("---") left when a table arrived on one line.
+    let collapsed: String = cleaned
+        .split_whitespace()
+        .filter(|w| {
+            !(w.len() >= 2 && w.contains('-') && w.chars().all(|c| c == '-' || c == ':'))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut trimmed = collapsed;
     if trimmed.chars().count() > MAX_CHARS {
         trimmed = trimmed.chars().take(MAX_CHARS).collect();
         trimmed = trimmed.trim_end().to_string();
@@ -1865,6 +1860,10 @@ mod tests {
         );
         assert_eq!(
             display_content("| 野獣先輩 | |\n|---|---|\n| 原作 | 淫夢 |"),
+            "野獣先輩 原作 淫夢"
+        );
+        assert_eq!(
+            display_content("| 野獣先輩 | |---|---| | 原作 | 淫夢 |"),
             "野獣先輩 原作 淫夢"
         );
         assert_eq!(display_content("### 「野獣先輩」とは"), "「野獣先輩」とは");
