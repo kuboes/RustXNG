@@ -83,4 +83,4 @@ pre.error { background: var(--card); padding: 1rem; border-radius: .5rem; overfl
   white-space: nowrap;
 }
 
-.site-logo { height: 1.6em; vertical-align: -0.35em; background: #fff; border-radius: .3rem; padding: .08em; margin-right: .15em; }
+.site-logo { height: 1.05em; vertical-align: -0.2em; background: #fff; border-radius: .25rem; padding: .05em; margin-right: .1em; }
