@@ -1374,7 +1374,8 @@ pub fn display_content(content: &str) -> String {
     trimmed
 }
 
-/// `[text](url)` -> `text`, `![alt](url)` -> "".
+/// `[text](url)` -> `text`, `![alt](url)` -> "". Handles nested markup
+/// such as linked images (`[![alt](img)](page)` -> "").
 fn strip_markdown_links(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
@@ -1384,13 +1385,12 @@ fn strip_markdown_links(s: &str) -> String {
         let link = bytes[i] == b'[';
         if image || link {
             let open = if image { i + 1 } else { i };
-            if let Some(close_rel) = s[open + 1..].find(']') {
-                let close = open + 1 + close_rel;
+            if let Some(close) = matching_delim(bytes, open, b'[', b']') {
                 if close + 1 < bytes.len() && bytes[close + 1] == b'(' {
-                    if let Some(end_rel) = s[close + 2..].find(')') {
-                        let end = close + 2 + end_rel;
+                    if let Some(end) = matching_delim(bytes, close + 1, b'(', b')') {
                         if !image {
-                            out.push_str(&s[open + 1..close]);
+                            // Recurse: a linked image becomes "".
+                            out.push_str(&strip_markdown_links(&s[open + 1..close]));
                         }
                         i = end + 1;
                         continue;
@@ -1403,6 +1403,25 @@ fn strip_markdown_links(s: &str) -> String {
         i += ch.len_utf8();
     }
     out
+}
+
+/// Index of the byte closing the opener at `open`, depth-aware so nested
+/// brackets/parens inside links and URLs match correctly.
+fn matching_delim(bytes: &[u8], open: usize, open_b: u8, close_b: u8) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        if bytes[i] == open_b {
+            depth += 1;
+        } else if bytes[i] == close_b {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1868,6 +1887,10 @@ mod tests {
         );
         assert_eq!(display_content("### 「野獣先輩」とは"), "「野獣先輩」とは");
         assert_eq!(display_content("![Icon](//images.uncyc.org/x.png) 本文"), "本文");
+        assert_eq!(
+            display_content("[![Icon](//images.uncyc.org/x.png)](/wiki/abc) 本文"),
+            "本文"
+        );
         let long = "あ".repeat(500);
         let shown = display_content(&long);
         assert_eq!(shown.chars().count(), 401); // 400 + …
