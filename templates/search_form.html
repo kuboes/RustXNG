@@ -14,4 +14,4 @@
 {% endif %}
 {% endfor %}
 </nav>
-<p class="profile-switch">Profile:{% if instance_name == "RustXNG (full)" %} <strong>Full</strong> · <a href="https://search.kubobeem.tech{% if query.is_empty() %}/{% else %}/search?q={{ query }}{% endif %}">Standard</a>{% else %} <strong>Standard</strong> · <a href="https://full.search.kubobeem.tech{% if query.is_empty() %}/{% else %}/search?q={{ query }}{% endif %}">Full</a>{% endif %}</p>
+<p class="profile-switch">Profile:{% if instance_name == "RustXNG (full)" %} <strong>Full</strong> · <a href="{% if query.is_empty() %}/?profile=standard{% else %}/search?q={{ query }}&profile=standard{% endif %}">Standard</a>{% else %} <strong>Standard</strong> · <a href="{% if query.is_empty() %}/?profile=full{% else %}/search?q={{ query }}&profile=full{% endif %}">Full</a>{% endif %}</p>
